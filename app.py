@@ -1,7 +1,7 @@
 """
     Front-end for app. Handles user audio input, 
     which runs whisper on the input and relays it (as text) back to the server.
-    Server should then handle it and return Success or Failure. 
+    Server should then handle it and return Success or Failure.
 """
 
 from kivy.app import App
@@ -14,17 +14,23 @@ import numpy as np
 import wave
 import time
 import io
+import sounddevice as sd
+from pydub import AudioSegment
 
 from audio_configs import CHUNK, CHANNELS, RATE, FORMAT
+from back_end import AudioAgent 
 
 # To run the app, simply run the Python file.
 
 class AudioLevelApp(App):
-    def __init__(self, debug=False):
+    def __init__(self, threshold=10, debug=False):
         self.recording=False
         self.start_time=0
         self.end_time=0
         self.debug=debug
+        self.threshold=threshold
+        self.audio_agent = AudioAgent()
+        
         super(AudioLevelApp, self).__init__()
     
     def build(self):
@@ -99,7 +105,7 @@ class AudioLevelApp(App):
         self.label.text = f"Audio Level: {rms:.2f}"
 
         print(rms)
-        if rms > 1:
+        if rms > self.threshold:
             if not self.recording:
                 self.recording = True
                 self.start_recording()
@@ -115,7 +121,7 @@ class AudioLevelApp(App):
             
             self.frames += [boosted_audio_data.tobytes()] # Save audio data for recording
             
-            if rms <= 1 and ((time.time() - self.start_time) > 3):
+            if rms <= self.threshold and ((time.time() - self.start_time) > 3):
                 self.recording = False
                 self.stop_recording()            
             
@@ -134,16 +140,47 @@ class AudioLevelApp(App):
             wf.setsampwidth(self.audio.get_sample_size(FORMAT))
             wf.setframerate(RATE)
             wf.writeframes(b"".join(self.frames))
+            
+        # Pass to agent, get voice output
+        response_audio = self.audio_agent.full_process(audio_file)
 
         # Save to local memory for debug purposes
         if self.debug:        
-            with wave.open("output.wav", "wb") as wf:
-                wf.setnchannels(CHANNELS)
-                wf.setsampwidth(self.audio.get_sample_size(FORMAT))
-                wf.setframerate(RATE)
-                wf.writeframes(b"".join(self.frames))
+            with open("output.mp3", "wb") as f:
+                f.write(audio_file.getvalue())
             print("Recoding saved to output.wav")
         
+            with open("agent_output.mp3", "wb") as f:
+                response_audio.seek(0)
+                f.write(response_audio.getvalue())
+            print("Recoding saved to agent_output.wav")
+            
+        # Play audio back to user
+        response_audio.seek(0)
+        
+        audio = AudioSegment.from_mp3(response_audio)
+        
+        sample_rate = audio.frame_rate
+        num_channels = audio.channels
+        sample_width = audio.sample_width
+                
+        raw_data = np.array(audio.get_array_of_samples())
+        if sample_width == 2:
+            dtype = np.int16
+        elif sample_width == 4:
+            dtype = np.int32
+        else:
+            dtype = np.int8
+            
+        audio_array = raw_data.astype(dtype)
+        
+        if num_channels > 1: # reshape array for multi channel audio
+            audio_array = audio_array.reshape(-1, num_channels)
+            
+        # Play audio, and wait until it finishes
+        sd.play(audio_array, samplerate=sample_rate)
+        # sd.wait()
+
     def on_stop(self):
         # Clean up mic audio stream
         self.stream.stop_stream()

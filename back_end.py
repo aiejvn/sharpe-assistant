@@ -20,7 +20,7 @@ class AudioAgent:
         )
         
         self.openai_client = OpenAI(
-            api_key=os.getenv('PERPLEXITY_API_KEY')
+            api_key=os.getenv('OPENAI_API_KEY')
         )
         
         self.cohere_client = cohere.ClientV2(os.getenv("COHERE_API_KEY"))
@@ -40,12 +40,18 @@ class AudioAgent:
     def audio_to_text(self, audio_file:io.BytesIO)->str:
         audio_file.seek(0) # Reset file pointer to beginning
         
+        # IoBytes is not accepted by whisper - .mp3 is
+        with open("user_input.mp3", "wb") as f:
+            f.write(audio_file.getvalue())
+        
         transcription = openai.audio.transcriptions.create(
             model="whisper-1", 
-            file=audio_file,
+            file=open("./user_input.mp3", "rb"),
         )
 
         print(transcription.text)
+        
+        return transcription.text
         
     def text_to_audio(self, text:str)->io.BytesIO:
         """
@@ -140,9 +146,15 @@ class AudioAgent:
                 print(response.choices[0].message)
                 
             return "Not done", ["Not implemented yet."]
+        
+    def full_process(self, audio:io.BytesIO)->io.BytesIO:
+        transcribed = self.audio_to_text(audio)  
+        cohere_response = self.cohere_response(transcribed)
+        audio_buffer = self.text_to_audio(cohere_response)
+        
+        return audio_buffer
 
 if __name__ == "__main__":
+    # For a small voice input (4,5,6), this took 12-13 seconds. Can we cut this down? 
     agent = AudioAgent(debug=True)
-    # agent.audio_to_text(open("./output.wav", 'rb')) # Debug file 
-    # agent.text_to_audio("What are the continents of the world?")
-    agent.cohere_response("What countries are in the G7?")
+    agent.full_process(open("./output.wav", 'rb'))
