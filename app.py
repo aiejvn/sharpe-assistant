@@ -144,6 +144,7 @@ class AudioLevelApp(App):
 
         print(rms)
         if rms > self.threshold:
+            # Sometimes, this picks up background noise and defaults to "bye-bye".
             if not self.recording:
                 self.recording = True
                 self.start_recording()

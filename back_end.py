@@ -4,10 +4,11 @@ import os
 from dotenv import load_dotenv
 import io
 import cohere
+from geopy.geocoders import Photon
+from geopy.exc import GeocoderTimedOut
 
-from audio_configs import CHUNK, CHANNELS, RATE, FORMAT
 
-# If we have time, learn web-sockets to make this stream output in real time.
+# TODO: Add Google Calendar management functionality
 
 class AudioAgent:
     
@@ -29,8 +30,11 @@ class AudioAgent:
             {
                 "role": "system",
                 "content": (
-                    "You are an artificial intelligence assistant and you need to "
-                    "engage in a helpful, detailed, polite conversation with a user."
+                    "You are Sharpe, an artificial intelligence assistant, and you need to "
+                    "engage in a helpful, detailed, polite conversation with a user. "
+                    # f"This user lives at {address}. Incorporate this into your search IF AND ONLY IF "
+                    f"This user lives near Queen's University, Kingston, Ontario. Incorporate this into your search IF AND ONLY IF the user asks for anything related to location."
+                    "Keep responses as brief as possible."
                 ),
             },
         ]
@@ -98,54 +102,41 @@ class AudioAgent:
         
         return response_text    
 
-    def perplexity_search(self, input_sentence:str)->str:
+    def perplexity_response(self, input_sentence:str)->str:
         """
             Given user input words, get perplexity output (if search required)
         """
         
         # Special conversation just for search function
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are an artificial intelligence assistant and you need to "
-                    "engage in a helpful, detailed, polite conversation with a user."
-                ),
-            },
-            {   
-                "role": "user",
-                "content": (input_sentence),
-            },
-        ]
+        self.convo += [{
+            "role": "user",
+            "content": (input_sentence),
+        }]
 
-        if not self.streaming:
-            # chat completion without streaming - defualt for now
-            response = self.perplexity_client.chat.completions.create(
-                model="sonar-pro",
-                messages=messages,
-            )
-            citations = response.citations
-            print(response.choices[0].message.content)
-            
-            return response, citations
-        else:
-            # chat completion with streaming - use if needed
-            response_stream = self.perplexity_client.chat.completions.create(
-                model="sonar-pro",
-                messages=messages,
-                stream=True,
-            )
-            citations = response.citations
-            
-            for response in response_stream:
-                print(response.choices[0].message)
+        response = self.perplexity_client.chat.completions.create(
+            model="sonar-pro",
+            messages=self.convo,
+        )
+        citations = response.citations
+        text = response.choices[0].message.content
+        self.convo += [{
+            "role":"system",
+            "content":(text)
+        }]
                 
-            return "Not done", ["Not implemented yet."]
+        return text, citations
+
         
     def full_process(self, audio:io.BytesIO)->io.BytesIO:
         transcribed = self.audio_to_text(audio)  
-        cohere_response = self.cohere_response(transcribed)
-        audio_buffer = self.text_to_audio(cohere_response)
+        print("FOUND USER SAID:", transcribed)
+
+        if 'today' in transcribed or 'recent' in transcribed:
+            text_response = self.perplexity_response(transcribed)[0] 
+        else:
+            text_response = self.cohere_response(transcribed)
+        
+        audio_buffer = self.text_to_audio(text_response)
         
         return audio_buffer
     
@@ -164,10 +155,26 @@ class AudioAgent:
       
         return audio_buffer
         
+    def get_user_location(self):
+        """
+            Get the user's location, for more localized requests with perplexity.
+        """
+        geolocator = Photon(user_agent="measurements")
         
-
+        try:
+            location = geolocator.geocode("", exactly_one=True, timeout=10)
+            if location:
+                address = location.raw.get('address', {})
+                return address
+            else:
+                return "Queen's University, Kingston, Ontario"
+                
+        except GeocoderTimedOut:
+            print("Geocoding services time out")
+            return "Queen's University, Kingston, Ontario"
+        
 if __name__ == "__main__":
     # For a small voice input (4,5,6), this took 12-13 seconds. Can we cut this down? 
         # Update: this is now 9 seconds.
     agent = AudioAgent(debug=True)
-    agent.full_process(open("./output.mp3", 'rb'))
+    # agent.full_process(open("./output.mp3", 'rb'))
