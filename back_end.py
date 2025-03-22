@@ -56,6 +56,7 @@ class AudioAgent:
     def text_to_audio(self, text:str)->io.BytesIO:
         """
             Given user input, get a TTS output.
+            This is our speed bottleneck - fix this
         """
         response = openai.audio.speech.create(
             model="gpt-4o-mini-tts",
@@ -63,13 +64,7 @@ class AudioAgent:
             input=text
         )
             
-        audio_buffer = io.BytesIO()
-
-        # Stream the audio data to the buffer
-        for chunk in response.iter_bytes(chunk_size=CHUNK):
-            audio_buffer.write(chunk)
-
-        # Reset the buffer's position to the beginning
+        audio_buffer = io.BytesIO(response.content) # Write straight to buffer
         audio_buffer.seek(0)
       
         if self.debug:
@@ -156,5 +151,6 @@ class AudioAgent:
 
 if __name__ == "__main__":
     # For a small voice input (4,5,6), this took 12-13 seconds. Can we cut this down? 
+        # Update: this is now 9 seconds.
     agent = AudioAgent(debug=True)
-    agent.full_process(open("./output.wav", 'rb'))
+    agent.full_process(open("./output.mp3", 'rb'))
