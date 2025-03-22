@@ -16,6 +16,7 @@ import time
 import io
 import sounddevice as sd
 from pydub import AudioSegment
+import os
 
 from audio_configs import CHUNK, CHANNELS, RATE, FORMAT
 from back_end import AudioAgent 
@@ -32,6 +33,43 @@ class AudioLevelApp(App):
         self.audio_agent = AudioAgent()
         
         super(AudioLevelApp, self).__init__()
+        
+        self.intro_user()
+        
+    def intro_user(self):
+        """
+            Play user introduction audio.
+        """
+        
+        if "intro.mp3" not in os.listdir("./"):
+            intro_audio = self.audio_agent.generate_intro()
+            with open("intro.mp3", "wb") as f:
+                f.write(intro_audio.getvalue())
+        
+        intro_audio = io.BytesIO()
+        with open("intro.mp3", "rb") as f:
+            intro_audio.write(f.read())
+        intro_audio.seek(0)
+                
+        intro_audio = AudioSegment.from_mp3(intro_audio)
+        sample_rate = intro_audio.frame_rate
+        num_channels = intro_audio.channels
+        sample_width = intro_audio.sample_width
+                
+        raw_data = np.array(intro_audio.get_array_of_samples())
+        if sample_width == 2:
+            dtype = np.int16
+        elif sample_width == 4:
+            dtype = np.int32
+        else:
+            dtype = np.int8
+            
+        audio_array = raw_data.astype(dtype)
+        
+        if num_channels > 1: # reshape array for multi channel audio
+            audio_array = audio_array.reshape(-1, num_channels)
+            
+        sd.play(audio_array, samplerate=sample_rate)
     
     def build(self):
         self.layout = BoxLayout(orientation='vertical', padding=20, spacing=20)

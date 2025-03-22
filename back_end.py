@@ -148,6 +148,23 @@ class AudioAgent:
         audio_buffer = self.text_to_audio(cohere_response)
         
         return audio_buffer
+    
+    def generate_intro(self)->io.BytesIO:
+        """
+            Generate the startup audio, if it doesn't exist already.
+        """
+        response = openai.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="coral",
+            input="Hi! I'm Sharpe, your personal hands-free assistant. How may I help you today?"
+        )
+            
+        audio_buffer = io.BytesIO(response.content) # Write straight to buffer
+        audio_buffer.seek(0)
+      
+        return audio_buffer
+        
+        
 
 if __name__ == "__main__":
     # For a small voice input (4,5,6), this took 12-13 seconds. Can we cut this down? 
