@@ -7,8 +7,9 @@ import cohere
 from geopy.geocoders import Photon
 from geopy.exc import GeocoderTimedOut
 
-
-# TODO: Add Google Calendar management functionality
+# TODO: Once google calendar functionality is implemented, convert everything to async websockets
+    # So that users can send multiple tasks at a time
+    # Then add more task agents
 
 class AudioAgent:
     
