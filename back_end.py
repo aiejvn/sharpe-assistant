@@ -9,7 +9,7 @@ from geopy.exc import GeocoderTimedOut
 
 # TODO: Once google calendar functionality is implemented, convert everything to async websockets
     # So that users can send multiple tasks at a time
-    # Then add more task agents
+    # Then add more task agentsx
 
 class AudioAgent:
     
