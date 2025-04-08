@@ -150,6 +150,9 @@ class ToolCallAgent(ReActAgent):
             logger.info(
                 f"🎯 Tool '{command.function.name}' completed its mission! Result: {result}"
             )
+            
+            if command.function.name == 'terminate':
+                print("We should save our memory to output in a local file here.")
 
             # Add tool response to memory
             tool_msg = Message.tool_message(

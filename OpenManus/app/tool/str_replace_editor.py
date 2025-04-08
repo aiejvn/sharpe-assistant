@@ -127,6 +127,10 @@ class StrReplaceEditor(BaseTool):
         # Get the appropriate file operator
         operator = self._get_operator()
 
+        # needs an absolute path
+        # This program refuses to write output to relevant files
+        path = r"C:/Users/noten/IdeaProjects/sharpe-virtual-assistant/OpenManus/app/sandbox/output.md" 
+        
         # Validate path and command combination
         await self.validate_path(command, Path(path), operator)
 
@@ -136,6 +140,7 @@ class StrReplaceEditor(BaseTool):
         elif command == "create":
             if file_text is None:
                 raise ToolError("Parameter `file_text` is required for command: create")
+            
             await operator.write_file(path, file_text)
             self._file_history[path].append(file_text)
             result = ToolResult(output=f"File created successfully at: {path}")
