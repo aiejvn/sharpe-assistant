@@ -1,0 +1,25 @@
+Prompt: Find and summarize the best deck for each mastermind in Resident Evil: Resistance. Summarize output in a markdown file.
+
+Apparently we need to install Playwright? Otherwise OpenManus uses Beautiful Soup.
+There's 20 steps and they're all painfully slow.
+
+Manus also displays its thoughts. Seems to be a chain-of-thought architecture.
+
+First run: Manus selected 0 tools to use :skull:
+	- Failed. Used 0.07 cents (~71k tokens)
+
+Second run: more success. It just needed playwright, lol.
+	- It has no tools for watching videos
+	- OpenManus found a playlist, found videos, but kept reading the descriptions
+		- We could work on OpenManus parsing videos
+	- Steps seem to be less so a process and more a call stack cap
+
+Third run: Added to prompt to summarize findings in a markdown file - it did not. We should test how it works on non-video-related tasks.
+
+Fourth run: Used 'python run_mcp.py' instead.
+2025-04-08 00:25:56.616 | INFO     | app.agent.toolcall:act:150 - 🎯 Tool 'str_replace_editor' completed its mission! Result: Observed output of cmd `str_replace_editor` executed:
+Error executing tool str_replace_editor: The path \home\user\Resident_Evil_Resistance_Mastermind_Decks.md is not an absolute path
+	- Path error?
+	- Let's try doubling number of steps
+
+	- Output is only saved if Manus decides in its last step to save the result.
