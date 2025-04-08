@@ -5,7 +5,8 @@ An earpiece voice assistant. A voice-operated asynchronous agent network meant t
 
 OpenManus Functionality:
 - [X] Get OpenManus working 
-- [_] Add generic output write of internal knowledge so far direct to markdown on failure to write before last step 
+- [X] Add generic output write of internal knowledge so far direct to markdown on failure to write before last step 
+    - This was built in to OpenManus 
 - [_] Add OpenManus tool for parsing videos
 
 Sharpe Earpiece:
