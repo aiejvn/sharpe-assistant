@@ -1,4 +1,5 @@
 """File and directory manipulation tool with sandbox support."""
+import os
 
 from collections import defaultdict
 from pathlib import Path
@@ -129,7 +130,9 @@ class StrReplaceEditor(BaseTool):
 
         # needs an absolute path
         # This program refuses to write output to relevant files
-        path = r"C:/Users/noten/IdeaProjects/sharpe-virtual-assistant/OpenManus/app/sandbox/output.md" 
+
+        path = os.path.join(os.path.abspath("./"), "app/sandbox/output.md")
+        # path = r"C:/Users/noten/IdeaProjects/sharpe-virtual-assistant/OpenManus/app/sandbox/output.md" 
         
         # Validate path and command combination
         await self.validate_path(command, Path(path), operator)
@@ -191,12 +194,13 @@ class StrReplaceEditor(BaseTool):
                 )
 
         # Check if file exists for create command
-        elif command == "create":
-            exists = await operator.exists(path)
-            if exists:
-                raise ToolError(
-                    f"File already exists at: {path}. Cannot overwrite files using command `create`."
-                )
+            # Since all output files will have the same path, we want to overwrite output.
+        # elif command == "create":
+        #     exists = await operator.exists(path)
+        #     if exists:
+        #         raise ToolError(
+        #             f"File already exists at: {path}. Cannot overwrite files using command `create`."
+        #         )
 
     async def view(
         self,
