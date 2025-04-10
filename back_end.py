@@ -3,29 +3,30 @@ from openai import OpenAI
 import os
 from dotenv import load_dotenv
 import io
-import cohere
+# import cohere
 from geopy.geocoders import Photon
 from geopy.exc import GeocoderTimedOut
 
-# TODO: Once google calendar functionality is implemented, convert everything to async websockets
-    # So that users can send multiple tasks at a time
-    # Then add more task agentsx
+from tools.cohere_tool import CohereTool
+from tools.perplexity_tool import PerplexityTool
 
-class AudioAgent:
+class BackEnd:
     
     def __init__(self, streaming=False, debug=False):
         load_dotenv()
         
-        self.perplexity_client = OpenAI(
-            api_key=os.getenv('PERPLEXITY_API_KEY'), 
-            base_url="https://api.perplexity.ai"
-        )
+        self.perplexity = PerplexityTool()
+        # self.perplexity_client = OpenAI(
+        #     api_key=os.getenv('PERPLEXITY_API_KEY'), 
+        #     base_url="https://api.perplexity.ai"
+        # )
         
         self.openai_client = OpenAI(
             api_key=os.getenv('OPENAI_API_KEY')
         )
         
-        self.cohere_client = cohere.ClientV2(os.getenv("COHERE_API_KEY"))
+        self.cohere = CohereTool()
+        # self.cohere_client = cohere.ClientV2(os.getenv("COHERE_API_KEY"))
         
         self.convo = [
             {
@@ -79,65 +80,77 @@ class AudioAgent:
         return audio_buffer
         
         
-    def cohere_response(self, input_sentence:str)->str:
-        """
-            Given user input words, get Cohere output (if no search required)
-        """
+    # def cohere_response(self, input_sentence:str)->str:
+    #     """
+    #         Given user input words, get Cohere output (if no search required)
+    #     """
         
-        self.convo += [{
-            "role": "user",
-            "content": (input_sentence),
-        }]
+    #     self.convo += [{
+    #         "role": "user",
+    #         "content": (input_sentence),
+    #     }]
         
-        response = self.cohere_client.chat(
-            model="command-a-03-2025", 
-            messages=self.convo
-        )
+    #     response = self.cohere_client.chat(
+    #         model="command-a-03-2025", 
+    #         messages=self.convo
+    #     )
         
-        response_text = response.message.content[0].text
+    #     response_text = response.message.content[0].text
         
-        self.convo += [{
-            "role":"system",
-            "content":(response_text)
-        }]
+    #     self.convo += [{
+    #         "role":"system",
+    #         "content":(response_text)
+    #     }]
         
-        return response_text    
+    #     return response_text    
 
-    def perplexity_response(self, input_sentence:str)->str:
-        """
-            Given user input words, get perplexity output (if search required)
-        """
+    # def perplexity_response(self, input_sentence:str)->str:
+    #     """
+    #         Given user input words, get perplexity output (if search required)
+    #     """
         
-        # Special conversation just for search function
-        self.convo += [{
-            "role": "user",
-            "content": (input_sentence),
-        }]
+    #     # Special conversation just for search function
+    #     self.convo += [{
+    #         "role": "user",
+    #         "content": (input_sentence),
+    #     }]
 
-        response = self.perplexity_client.chat.completions.create(
-            model="sonar-pro",
-            messages=self.convo,
-        )
-        citations = response.citations
-        text = response.choices[0].message.content
-        self.convo += [{
-            "role":"system",
-            "content":(text)
-        }]
+    #     response = self.perplexity_client.chat.completions.create(
+    #         model="sonar-pro",
+    #         messages=self.convo,
+    #     )
+    #     citations = response.citations
+    #     text = response.choices[0].message.content
+    #     self.convo += [{
+    #         "role":"system",
+    #         "content":(text)
+    #     }]
                 
-        return text, citations
+    #     return text, citations
 
         
     def full_process(self, audio:io.BytesIO)->io.BytesIO:
         transcribed = self.audio_to_text(audio)  
         print("FOUND USER SAID:", transcribed)
 
+        self.convo += [{
+            "role": "user",
+            "content": (transcribed),
+        }]
+
         if 'today' in transcribed or 'recent' in transcribed:
-            text_response = self.perplexity_response(transcribed)[0] 
+            text_response = self.perplexity.perplexity_response(self.convo)[0] 
         else:
-            text_response = self.cohere_response(transcribed)
+            text_response = self.cohere.cohere_response(self.convo)
+        
+        text_response += "Anything else I can help with?" # Ensure we ask the user for more stuff
         
         audio_buffer = self.text_to_audio(text_response)
+        
+        self.convo += [{
+            "role": "system",
+            "content": (text_response),
+        }]
         
         return audio_buffer
     
@@ -177,5 +190,5 @@ class AudioAgent:
 if __name__ == "__main__":
     # For a small voice input (4,5,6), this took 12-13 seconds. Can we cut this down? 
         # Update: this is now 9 seconds.
-    agent = AudioAgent(debug=True)
+    agent = BackEnd(debug=True)
     # agent.full_process(open("./output.mp3", 'rb'))

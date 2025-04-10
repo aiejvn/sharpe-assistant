@@ -19,7 +19,7 @@ from pydub import AudioSegment
 import os
 
 from audio_configs import CHUNK, CHANNELS, RATE, FORMAT
-from back_end import AudioAgent 
+from back_end import BackEnd 
 
 # To run the app, simply run the Python file.
 
@@ -30,7 +30,7 @@ class AudioLevelApp(App):
         self.end_time=0
         self.debug=debug
         self.threshold=threshold
-        self.audio_agent = AudioAgent()
+        self.backend=BackEnd()
         
         super(AudioLevelApp, self).__init__()
         
@@ -42,7 +42,7 @@ class AudioLevelApp(App):
         """
         
         if "intro.mp3" not in os.listdir("./"):
-            intro_audio = self.audio_agent.generate_intro()
+            intro_audio = self.backend.generate_intro()
             with open("intro.mp3", "wb") as f:
                 f.write(intro_audio.getvalue())
         
@@ -181,7 +181,7 @@ class AudioLevelApp(App):
             wf.writeframes(b"".join(self.frames))
             
         # Pass to agent, get voice output
-        response_audio = self.audio_agent.full_process(audio_file)
+        response_audio = self.backend.full_process(audio_file)
 
         # Save to local memory for debug purposes
         if self.debug:        
@@ -223,7 +223,7 @@ class AudioLevelApp(App):
     def on_stop(self):
         # Clean up mic audio stream
         self.stream.stop_stream()
-        self.steam.close()
+        self.stream.close()
         self.audio.terminate()
     
 if __name__ == "__main__":    

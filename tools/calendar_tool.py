@@ -8,16 +8,11 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import re
 
-"""
-    TODO: Implement a class whose functions interact with Google calendar.
-    We will call the following functions based if the user has 'Add Event', 'Read Event', or 'Delete Event' in transcription 
-                                            
-"""
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-class CalendarManager:
+class CalendarTool:
     def __init___(self):
         creds = None
   
@@ -87,4 +82,4 @@ class CalendarManager:
     
     
 if __name__ == '__main__':
-    cal = CalendarManager()
+    cal = CalendarTool()
