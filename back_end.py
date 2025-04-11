@@ -13,20 +13,14 @@ from tools.perplexity_tool import PerplexityTool
 class BackEnd:
     
     def __init__(self, streaming=False, debug=False):
+        self.streaming = streaming
+        self.debug = debug
+
         load_dotenv()
         
-        self.perplexity = PerplexityTool()
-        # self.perplexity_client = OpenAI(
-        #     api_key=os.getenv('PERPLEXITY_API_KEY'), 
-        #     base_url="https://api.perplexity.ai"
-        # )
-        
-        self.openai_client = OpenAI(
-            api_key=os.getenv('OPENAI_API_KEY')
-        )
-        
-        self.cohere = CohereTool()
-        # self.cohere_client = cohere.ClientV2(os.getenv("COHERE_API_KEY"))
+        self.perplexity = PerplexityTool(streaming=self.streaming)        
+        self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        self.cohere = CohereTool(streaming=self.streaming)
         
         self.convo = [
             {
@@ -40,8 +34,6 @@ class BackEnd:
                 ),
             },
         ]
-        self.streaming = streaming
-        self.debug = debug
         
     def audio_to_text(self, audio_file:io.BytesIO)->str:
         audio_file.seek(0) # Reset file pointer to beginning
@@ -54,11 +46,10 @@ class BackEnd:
             model="whisper-1", 
             file=open("./user_input.mp3", "rb"),
         )
-
-        print(transcription.text)
         
         return transcription.text
-        
+
+
     def text_to_audio(self, text:str)->io.BytesIO:
         """
             Given user input, get a TTS output.
@@ -78,56 +69,56 @@ class BackEnd:
                 f.write(audio_buffer.getvalue())
       
         return audio_buffer
-        
-        
-    # def cohere_response(self, input_sentence:str)->str:
-    #     """
-    #         Given user input words, get Cohere output (if no search required)
-    #     """
-        
-    #     self.convo += [{
-    #         "role": "user",
-    #         "content": (input_sentence),
-    #     }]
-        
-    #     response = self.cohere_client.chat(
-    #         model="command-a-03-2025", 
-    #         messages=self.convo
-    #     )
-        
-    #     response_text = response.message.content[0].text
-        
-    #     self.convo += [{
-    #         "role":"system",
-    #         "content":(response_text)
-    #     }]
-        
-    #     return response_text    
-
-    # def perplexity_response(self, input_sentence:str)->str:
-    #     """
-    #         Given user input words, get perplexity output (if search required)
-    #     """
-        
-    #     # Special conversation just for search function
-    #     self.convo += [{
-    #         "role": "user",
-    #         "content": (input_sentence),
-    #     }]
-
-    #     response = self.perplexity_client.chat.completions.create(
-    #         model="sonar-pro",
-    #         messages=self.convo,
-    #     )
-    #     citations = response.citations
-    #     text = response.choices[0].message.content
-    #     self.convo += [{
-    #         "role":"system",
-    #         "content":(text)
-    #     }]
+    
+    
+    def use_tool(self, text:str)->str:
+        """
+            Given user voice input, determine what they want
+            in constant time, and return a fitting result in String form.
+            Note: this is not natural language input, but rather command input
+            parsed algorithmically.
+        """
+        terms = text.split()
+        try:
+            match terms[0].lower():
+                case "search":
+                    # User wants to search for something
+                    # Google it and return it
+                    return self.perplexity.perplexity_response(self.convo)[0]
                 
-    #     return text, citations
+                case "calendar":
+                    match terms[1].lower():
+                        case "view":
+                            # Find the conditions on which user wants to view events
+                            # return them
+                            NotImplementedError()
+                
+                        case "add":
+                            # Find where user wants to add event
+                            # return success or failure
+                            NotImplementedError()
+                            
+                        case "edit":
+                            # Find what event user wants to edit, edit it
+                            # return success or failure
+                            NotImplementedError()
 
+                        case "delete":
+                            # Find what event user wants to delete, delete it
+                            # return success or failure
+                            NotImplementedError()
+                
+                        case _:
+                            # Ok what do u want user...
+                            return f"Could not find tool: {terms[1]} for {terms[0]}" 
+                case _:
+                    # If they don't want any tools, they prob want reasoning
+                    return self.cohere.cohere_response(self.convo)
+        except:
+            # Don't know what do => Send them to chatbot
+            return self.cohere.cohere_response(self.convo)
+        
+    
         
     def full_process(self, audio:io.BytesIO)->io.BytesIO:
         transcribed = self.audio_to_text(audio)  
@@ -138,12 +129,9 @@ class BackEnd:
             "content": (transcribed),
         }]
 
-        if 'today' in transcribed or 'recent' in transcribed:
-            text_response = self.perplexity.perplexity_response(self.convo)[0] 
-        else:
-            text_response = self.cohere.cohere_response(self.convo)
+        text_response = self.use_tool(transcribed)
         
-        text_response += "Anything else I can help with?" # Ensure we ask the user for more stuff
+        text_response += " Anything else I can help with?" # Ensure we ask the user for more stuff
         
         audio_buffer = self.text_to_audio(text_response)
         
@@ -190,5 +178,6 @@ class BackEnd:
 if __name__ == "__main__":
     # For a small voice input (4,5,6), this took 12-13 seconds. Can we cut this down? 
         # Update: this is now 9 seconds.
-    agent = BackEnd(debug=True)
+    # agent = BackEnd(debug=True)
     # agent.full_process(open("./output.mp3", 'rb'))
+    pass

@@ -19,6 +19,8 @@ from pydub import AudioSegment
 import os
 
 from audio_configs import CHUNK, CHANNELS, RATE, FORMAT
+
+# Import backend for now. In the future, switch this over to a server and ping endpoints.
 from back_end import BackEnd 
 
 # To run the app, simply run the Python file.

@@ -13,7 +13,7 @@ import re
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 class CalendarTool:
-    def __init___(self):
+    def __init__(self):
         creds = None
   
         # The file token.json stores the user's access and refresh tokens, and is
@@ -21,6 +21,7 @@ class CalendarTool:
         # time.
         if os.path.exists("token.json"):
             creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+        
         # If there are no (valid) credentials available, let the user log in.
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
@@ -30,11 +31,12 @@ class CalendarTool:
                     "credentials.json", SCOPES
                 )
                 creds = flow.run_local_server(port=0)
-                # Save the credentials for the next run
+                
+            # Save the credentials for the next run
             with open("token.json", "w") as token:
                 token.write(creds.to_json())
 
-        # ------- CALENDAR ------- 
+        # Calendar Object  
         self.service = build("calendar", "v3", credentials=creds)
         if not self.service:
             AssertionError("Could not initialize calendar.")
@@ -46,19 +48,35 @@ class CalendarTool:
     def remove_event(self, date:datetime.datetime, end_date:datetime.datetime, name="Upcoming Event"):
         pass
     
-    def read_events(self, 
-                    start_date:datetime.datetime, 
-                    end_date:datetime.datetime=datetime.datetime.now(), 
-                    name="Upcoming Event"):
+    def read_events(self,
+        start_date:datetime.datetime=datetime.datetime.now(),
+        end_date:datetime.datetime=None,
+        num_events=None
+    )->list | None:
+        if not num_events:
+            num_events = 10
+        
         try:
+            # Debug:
+            # end_date = start_date + datetime.timedelta(hours=8)
+            
             # Call the Calendar API
+            start_date = start_date.astimezone(datetime.timezone.utc).isoformat()
+            
+            # Replace "+00:00" with "Z" to make format Google-Parsable            
+            start_date = start_date[:-6] + "Z"
+            
+            if end_date: 
+                end_date = end_date.astimezone(datetime.timezone.utc).isoformat()
+                end_date = end_date[:-6] + "Z"
+            
             events_result = (
                 self.service.events()
                 .list(
                     calendarId="primary",
                     timeMin=start_date,
                     timeMax=end_date,
-                    maxResults=10,
+                    maxResults=num_events,
                     singleEvents=True,
                     orderBy="startTime",
                 )
@@ -83,3 +101,4 @@ class CalendarTool:
     
 if __name__ == '__main__':
     cal = CalendarTool()
+    print(cal.read_events())
