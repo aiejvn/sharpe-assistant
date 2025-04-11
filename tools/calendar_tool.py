@@ -1,4 +1,6 @@
-import datetime
+import datetime as dt
+from datetime import datetime
+from dateutil import parser, relativedelta
 import os.path
 
 from google.auth.transport.requests import Request
@@ -6,7 +8,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import re
+
 
 
 # If modifying these scopes, delete the file token.json.
@@ -41,33 +43,63 @@ class CalendarTool:
         if not self.service:
             AssertionError("Could not initialize calendar.")
 
+
+    def string_to_datetime(self, time:str)->datetime:
+        """
+            Given a string like "Monday", find the date of the soonest Monday and return it as a String.
+            Given a string like "April 18th", find the date of the soonest April 18th and return it as a String.
+        """
+        reference_date = datetime.now()
+        
+        try:
+            # Try to parse absolute date first (i.e. "April 19th")
+            parsed_date = parser.parse(time, default=reference_date)
+            
+            # If parsed date is in the past, move to the next year (for annual dates like "April 19th")
+                # fuzzy = true removes noise from the string
+                # fuzzy_with_true allows parsing of spoken times
+            if parsed_date < reference_date:
+                if parser.parse(time, fuzzy=True).year == parsed_date.year:
+                    parsed_date = parsed_date.replace(year=parsed_date.year + 1)
+            
+            return parsed_date
+        except Exception as e:
+            print("Could not parse date:", e)
+
     
-    def add_event(self, start_date:datetime.datetime, end_date:datetime.datetime, name="Upcoming Event"):
+    def add_event(self, start_date:datetime, end_date:datetime, name="Upcoming Event"):
         pass
 
-    def remove_event(self, date:datetime.datetime, end_date:datetime.datetime, name="Upcoming Event"):
+
+    def remove_event(self, date:datetime, end_date:datetime, name="Upcoming Event"):
         pass
+
     
     def read_events(self,
-        start_date:datetime.datetime=datetime.datetime.now(),
-        end_date:datetime.datetime=None,
+        start_date:str,
+        end_date:str=None,
         num_events=None
     )->list | None:
         if not num_events:
             num_events = 10
+        start_date = self.string_to_datetime(start_date)
+        if end_date: end_date = self.string_to_datetime(end_date)
+        
+        
+        # Convert start dates from String Input to Datetime objects
         
         try:
             # Debug:
             # end_date = start_date + datetime.timedelta(hours=8)
             
             # Call the Calendar API
-            start_date = start_date.astimezone(datetime.timezone.utc).isoformat()
+            start_date = start_date.astimezone(dt.timezone.utc).isoformat()
             
             # Replace "+00:00" with "Z" to make format Google-Parsable            
             start_date = start_date[:-6] + "Z"
             
             if end_date: 
-                end_date = end_date.astimezone(datetime.timezone.utc).isoformat()
+                end_date = end_date.astimezone(dt.timezone.utc).isoformat()
                 end_date = end_date[:-6] + "Z"
             
             events_result = (
@@ -101,4 +133,13 @@ class CalendarTool:
     
 if __name__ == '__main__':
     cal = CalendarTool()
-    print(cal.read_events())
+    
+    # Parse test cases
+    # print(cal.string_to_datetime("Monday 11 o'clock"))
+    print(cal.string_to_datetime("Monday"))
+    print(cal.string_to_datetime("April 19th"))
+    print(cal.string_to_datetime("March 10th"))
+    
+    # Test reading events
+    print(cal.read_events(start_date="April 11th"))
+    
