@@ -1,5 +1,5 @@
 import datetime as dt
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil import parser, relativedelta
 import os.path
 
@@ -67,11 +67,52 @@ class CalendarTool:
             print("Could not parse date:", e)
 
     
-    def add_event(self, start_date:datetime, end_date:datetime, name="Upcoming Event"):
-        pass
+    def add_event(self, start_date:str, end_date:str, name="Upcoming Event", location=""):
+        """
+            Adds an event to the Google Calendar.
+            Requires string_to_datetime to be able to parse times in dates.
+        """
+        # Subtract 3 hours from start dates and end dates 
+        start_date = self.string_to_datetime(start_date) - timedelta(hours=3)        
+        start_date = start_date.astimezone(dt.timezone.utc).isoformat()
+            
+        end_date = self.string_to_datetime(start_date) - timedelta(hours=3)
+        end_date = end_date - timedelta(hours=3)
+        end_date = end_date.astimezone(dt.timezone.utc).isoformat()
+        
+        event = {
+            'summary': name,
+            'location': location,
+            'description': 'Event created by Sharpe.',
+            'start': {
+                'dateTime': start_date, 
+                'timeZone': "Canada/Eastern", # Random +3 hours???
+            },
+            'end': {
+                'dateTime': end_date,
+                'timeZone': "Canada/Eastern",
+            },
+            'recurrence': [
+                # 'RRULE:FREQ=DAILY;COUNT=1'
+            ],
+            'attendees': [
+                # {'email': 'lpage@example.com'},
+                # {'email': 'sbrin@example.com'},
+            ],
+            'reminders': {
+                'useDefault': False,
+                'overrides': [
+                {'method': 'email', 'minutes': 24 * 60},
+                {'method': 'popup', 'minutes': 10},
+                ],
+            },
+        }
+
+        event = cal.service.events().insert(calendarId='primary', body=event).execute()
+        print('Event created: %s' % (event.get('htmlLink')))
 
 
-    def remove_event(self, date:datetime, end_date:datetime, name="Upcoming Event"):
+    def remove_event(self, start_date:str, end_date:str, name="Upcoming Event"):
         pass
 
     
@@ -135,11 +176,47 @@ if __name__ == '__main__':
     cal = CalendarTool()
     
     # Parse test cases
-    # print(cal.string_to_datetime("Monday 11 o'clock"))
-    print(cal.string_to_datetime("Monday"))
-    print(cal.string_to_datetime("April 19th"))
-    print(cal.string_to_datetime("March 10th"))
+    print(cal.string_to_datetime("Monday 11 o'clock"))
+        # Doesn't work (at least not yet)
+        
+    # Below works
+    # print(cal.string_to_datetime("Monday"))
+    # print(cal.string_to_datetime("April 19th"))
+    # print(cal.string_to_datetime("March 10th"))
     
-    # Test reading events
+    # Test reading events - works
     print(cal.read_events(start_date="April 11th"))
     
+    # Debugging calendar adding an event
+    event = {
+        'summary': 'Google I/O 2015',
+        'location': '',
+        'description': 'A chance to hear more about Google\'s developer products.',
+        'start': {
+            # 'dateTime': '2025-04-11T09:00:00-07:00',
+            'dateTime': '2025-04-11T01:00:00.460840',
+            'timeZone': 'America/Los_Angeles',
+        },
+        'end': {
+            # 'dateTime': '2025-04-11T17:00:00-07:00',
+            'dateTime': '2025-04-11T09:00:00.460840',
+            'timeZone': 'America/Los_Angeles',
+        },
+        'recurrence': [
+            # 'RRULE:FREQ=DAILY;COUNT=1'
+        ],
+        'attendees': [
+            # {'email': 'lpage@example.com'},
+            # {'email': 'sbrin@example.com'},
+        ],
+        'reminders': {
+            'useDefault': False,
+            'overrides': [
+            {'method': 'email', 'minutes': 24 * 60},
+            {'method': 'popup', 'minutes': 10},
+            ],
+        },
+    }
+
+    event = cal.service.events().insert(calendarId='primary', body=event).execute()
+    print('Event created: %s' % (event.get('htmlLink')))
