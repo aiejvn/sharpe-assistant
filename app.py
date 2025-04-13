@@ -229,5 +229,5 @@ class AudioLevelApp(App):
         self.audio.terminate()
     
 if __name__ == "__main__":    
-    ma = AudioLevelApp(debug=True)
+    ma = AudioLevelApp(threshold=15, debug=True)
     ma.run()
