@@ -245,12 +245,15 @@ class CalendarTool:
             
             # Replace "+00:00" with "Z" to make format Google-Parsable            
             start_date = start_date[:-6] + "Z"
+            print(str(start_date))
             
             if end_date: 
                 end_date = end_date.astimezone(dt.timezone.utc).isoformat()
                 end_date = end_date[:-6] + "Z"
             
             if end_date:
+                print(str(end_date))
+                
                 events_result = (
                     self.service.events()
                     .list(

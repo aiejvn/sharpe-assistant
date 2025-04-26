@@ -15,6 +15,8 @@ from tools.cohere_tool import CohereTool
 from tools.perplexity_tool import PerplexityTool
 from tools.calendar_tool import CalendarTool
 
+import string
+
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -113,23 +115,26 @@ class BackEnd:
         return audio_buffer
     
     
-    def use_tool(self, text:str)->str:
+    def use_tool(self, text:str):
         """
             Given user voice input, determine what they want
-            in constant time, and return a fitting result in String form.
+            in constant time, and return a fitting result in tuple(tool:str, res:str) form.
             Note: this is not natural language input, but rather command input
             parsed algorithmically.
         """
+        translator = str.maketrans('', '', string.punctuation)
         terms = text.split()
+        print(terms[0].lower().translate(translator))
+        print(terms[1].lower().translate(translator))
         try:
-            match terms[0].lower():
+            match terms[0].lower().translate(translator):
                 case "search":
                     # User wants to search for something
                     # Google it and return it
-                    return self.perplexity.perplexity_response(self.convo)[0]
+                    return ('perplexity_search', self.perplexity.perplexity_response(self.convo)[0])
                 
                 case "calendar":                    
-                    match terms[1].lower():
+                    match terms[1].lower().translate(translator):
                         case "view":
                             # Find the conditions on which user wants to view events
                             # return them
@@ -140,19 +145,24 @@ class BackEnd:
                                 # start date
                                 # end date
                             
-                            # -> FOUND USER SAID: Calendar, view 10, April 25, May 10.
-                            event_number = terms[2]
-                            start_date = f"{terms[3]} {terms[4]}"
-                            end_date = f"{terms[5]} {terms[6]}"
+                            # -> FOUND USER SAID: Calendar, view 10, Monday 12, Tuesday 14.
+                                # Months kinda buggy rn
+                            print("Now viewing calendar events...")
+                                
+                            event_number = int(terms[2].translate(translator))
+                            start_date = f"{terms[3]} {terms[4]}".translate(translator)
+                            end_date = f"{terms[5]} {terms[6]}".translate(translator)
 
                             event_list = self.calendar.read_events(start_date=start_date, end_date=end_date, num_events=event_number)
-                            n = len(event_list)
-                            if n > 0:
+                            if event_list: 
+                                n = len(event_list)
                                 event_str = ""
                                 for i in range(n):
-                                    event_str += f"{i}: {event_list[i][0]} \n"
+                                    event_str += f"Event {i}: {event_list[i][0]} \n"
+                                print("Found events:", event_str)
+                                return ('calendar', event_str)
                             else:
-                                return "No events found."
+                                return ('calendar', "No events found.")
                             
                         case "add":
                             # Find where user wants to add event
@@ -173,13 +183,13 @@ class BackEnd:
                 
                         case _:
                             # Ok what do u want user...
-                            return f"Could not find tool: {terms[1]} for {terms[0]}" 
+                            return ('Tool Not Found', f"Could not find tool: {terms[1]} for {terms[0]}" )
                 case _:
                     # If they don't want any tools, they prob want reasoning
-                    return self.cohere.cohere_response(self.convo)
-        except:
+                    return ('cohere', self.cohere.cohere_response(self.convo))
+        except Exception as e:
             # Don't know what do => Send them to chatbot
-            return self.cohere.cohere_response(self.convo)
+            return ('Error', str(e))
         
     
         
@@ -192,7 +202,8 @@ class BackEnd:
             "content": (transcribed),
         }]
 
-        text_response = self.use_tool(transcribed)
+        tool_used, text_response = self.use_tool(transcribed)
+        print("Used tool:", tool_used)
         print("Responding with", text_response)
         
         audio_buffer = self.text_to_audio(text_response)
