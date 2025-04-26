@@ -23,12 +23,13 @@ from audio_configs import CHUNK, CHANNELS, RATE, FORMAT
 # To run the app, simply run the Python file.
 
 class AudioLevelApp(App):
-    def __init__(self, threshold=10, debug=False):
+    def __init__(self, threshold=10, debug=False, multiplier=1):
         self.recording=False
         self.start_time=0
         self.end_time=0
         self.debug=debug
         self.threshold=threshold
+        self.multiplier=multiplier
         
         super(AudioLevelApp, self).__init__()
         
@@ -74,7 +75,7 @@ class AudioLevelApp(App):
         
         if self.debug:
             # Buttons to toggle recording
-            self.record_button = Button(text='Start Recording', font_size='30sp')
+            self.record_button = Button(text='Force Recording', font_size='30sp')
             self.record_button.bind(on_press=self.toggle_recording)
             self.layout.add_widget(self.record_button)
         
@@ -146,7 +147,7 @@ class AudioLevelApp(App):
         
         if self.recording:           
             # Read audio from microphone
-            boosted_audio_data = audio_data * 5 # 20 is kinda loud lol
+            boosted_audio_data = audio_data * self.multiplier 
             
             # Clip the values to prevent overflow (16-bit signed integers range from -32768 to 32767)
             boosted_audio_data = np.clip(boosted_audio_data, -32768, 32767)
@@ -226,5 +227,5 @@ class AudioLevelApp(App):
         self.audio.terminate()
     
 if __name__ == "__main__":    
-    ma = AudioLevelApp(threshold=15, debug=True)
+    ma = AudioLevelApp(threshold=5, debug=True)
     ma.run()

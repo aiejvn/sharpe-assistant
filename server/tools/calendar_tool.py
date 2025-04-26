@@ -42,6 +42,22 @@ class CalendarTool:
         self.service = build("calendar", "v3", credentials=creds)
         if not self.service:
             AssertionError("Could not initialize calendar.")
+            
+        try:
+            calendar_list = self.service.calendarList().list().execute()
+            # for calendar in calendar_list['items']:
+            #     print(f"Calendar Name: {calendar['summary']}, Calendar ID: {calendar['id']}")
+            self.calendarType = next(
+                (calendar['id'] for calendar in calendar_list['items'] if calendar['summary'] == "Test Calendar"),
+                None
+            )
+            # print(self.calendarType)
+            if not self.calendarType:
+                raise ValueError("Test Calendar not found.")
+        except Exception as e:
+            print(f"An error occurred while fetching calendar IDs: {e}")
+            raise
+            
 
     def make_string_parsible(self, timestr:str)->str:
         """
@@ -130,7 +146,7 @@ class CalendarTool:
                 'colorId': 3
             }
 
-            event = self.service.events().insert(calendarId='primary', body=event).execute()
+            event = self.service.events().insert(calendarId=self.calendarType, body=event).execute()
             success_str = 'Event created: %s' % (event.get('htmlLink'))
             print(success_str)
             return success_str
@@ -148,7 +164,7 @@ class CalendarTool:
         """
         try:
             event_id = event_list[event_index][1]
-            self.service.events().delete(calendarId='primary', eventId=event_id).execute()
+            self.service.events().delete(calendarId=self.calendarType, eventId=event_id).execute()
             
             success_str = 'Event deleted: %s' % (event_list[event_index][0] + " : " + event_list[event_index][1])
             event_list.pop(event_index) # Remove the event from the local list of events, in-place.
@@ -171,7 +187,7 @@ class CalendarTool:
             event_id = event_list[event_index][1]
             
             # Retrieve the event from the API.
-            event = self.service.events().get(calendarId='primary', eventId=event_id).execute()
+            event = self.service.events().get(calendarId=self.calendarType, eventId=event_id).execute()
 
             match feature.lower():
                 case "start time":
@@ -196,7 +212,7 @@ class CalendarTool:
                     ValueError("Could not match input feature to any implemented feature.")
             # event[feature] = new_value
 
-            updated_event = self.service.events().update(calendarId='primary', eventId=event['id'], body=event).execute()
+            updated_event = self.service.events().update(calendarId=self.calendarType, eventId=event['id'], body=event).execute()
             
             success_str = 'Event updated: %s' % (event_list[event_index][0] + " : " + event_list[event_index][1])
             
@@ -238,7 +254,7 @@ class CalendarTool:
                 events_result = (
                     self.service.events()
                     .list(
-                        calendarId="primary",
+                        calendarId=self.calendarType,
                         timeMin=start_date,
                         timeMax=end_date,
                         maxResults=num_events,
@@ -251,7 +267,7 @@ class CalendarTool:
                 events_result = (
                     self.service.events()
                     .list(
-                        calendarId="primary",
+                        calendarId=self.calendarType,
                         timeMin=start_date,
                         maxResults=num_events,
                         singleEvents=True,

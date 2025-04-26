@@ -1,14 +1,19 @@
 import openai 
 from openai import OpenAI
-import os
 from dotenv import load_dotenv
-import io
 
+# Audio
+import io
+import os
+
+# Location
 from geopy.geocoders import Photon
 from geopy.exc import GeocoderTimedOut
 
+# MCP
 from tools.cohere_tool import CohereTool
 from tools.perplexity_tool import PerplexityTool
+from tools.calendar_tool import CalendarTool
 
 from flask import Flask, request, jsonify
 
@@ -22,9 +27,11 @@ class BackEnd:
 
         load_dotenv()
         
-        self.perplexity = PerplexityTool(streaming=self.streaming)        
         self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+        self.perplexity = PerplexityTool(streaming=self.streaming)        
         self.cohere = CohereTool(streaming=self.streaming)
+        self.calendar = CalendarTool()        
         
         self.convo = [
             {
@@ -34,25 +41,52 @@ class BackEnd:
                     "engage in a helpful, detailed, polite conversation with a user. "
                     # f"This user lives at {address}. Incorporate this into your search IF AND ONLY IF "
                     f"This user lives near Queen's University, Kingston, Ontario. Incorporate this into your search IF AND ONLY IF the user asks for anything related to location."
-                    "Keep responses as brief as possible."
+                    "Keep responses as brief as possible. Finish your responses by asking if the user if they need help with anything else."
                 ),
             },
         ]
+        #enhancing through pedalboard
+        # self.board =  Pedalboard([
+        #     NoiseGate(threshold_db=-30, ratio=1.5, release_ms=250),
+        #     Compressor(threshold_db=-16, ratio=4),
+        #     LowShelfFilter(cutoff_frequency_hz=400, gain_db=10, q=1),
+        #     Gain(gain_db=2)
+        # ])
+        
+    # def fix_audio(self, audio_path:str):
+    #     """
+    #         Use Pedalboard and NoiseReduce to remove noise from a file
+    #         and improve sound quality.
+    #         Takes a path to the file as input.
+    #     """
+    #     sr = 44100
+    #     with AudioFile(audio_path).resampled_to(sr) as f:
+    #         audio = f.read(f.frames)
+            
+    #     reduced_noise = nr.reduce_noise(y=audio, sr=sr, stationary=True, prop_decrease=0.75)
+    #     effected = self.board(reduced_noise, sr)
+        
+    #     output_path = "./user_input_enhanced.mp3"
+    #     with AudioFile(output_path, 'w', sr, effected.shape[0]) as f:
+    #         f.write(effected)
+            
+    #     return output_path
         
     def audio_to_text(self, audio_file:io.BytesIO)->str:
         audio_file.seek(0) # Reset file pointer to beginning
         print(f"Size of audio file input: {audio_file.getbuffer().nbytes} bytes")
-        audio_file.seek(0) # Reset file pointer to beginning
         
         # IoBytes is not accepted by whisper - .mp3 is
-        with open("user_input.mp3", "wb") as f:
+        temp_filepath = "user_input.mp3"
+        with open(temp_filepath, "wb") as f:
+            audio_file.seek(0) # Reset file pointer to beginning
             f.write(audio_file.getvalue())
             
         print("Wrote to user_input.mp3.")
         
         transcription = openai.audio.transcriptions.create(
             model="whisper-1", 
-            file=open("./user_input.mp3", "rb"),
+            file=open(temp_filepath, "rb"),
         )
         
         return transcription.text
@@ -94,40 +128,52 @@ class BackEnd:
                     # Google it and return it
                     return self.perplexity.perplexity_response(self.convo)[0]
                 
-                case "calendar":
-                    return "Not impemented yet! Stay tuned..."
-                    
-                    # match terms[1].lower():
-                    #     case "view":
-                    #         # Find the conditions on which user wants to view events
-                    #         # return them
+                case "calendar":                    
+                    match terms[1].lower():
+                        case "view":
+                            # Find the conditions on which user wants to view events
+                            # return them
                             
-                    #         # "calendar view 10 April 18 April 20"
-                    #             # event number (if exists)
-                    #             # start date
-                    #             # end date
-                    #         NotImplementedError()
-                
-                    #     case "add":
-                    #         # Find where user wants to add event
-                    #         # return success or failure
                             
-                    #         # "calendar add April 18 6:30 April 18 6:45 My Event"
-                    #         NotImplementedError()
+                            # "calendar view 10 April 25 May 10"
+                                # event number (if exists)
+                                # start date
+                                # end date
                             
-                    #     case "edit":
-                    #         # Find what event user wants to edit, edit it
-                    #         # return success or failure
-                    #         NotImplementedError()
+                            # -> FOUND USER SAID: Calendar, view 10, April 25, May 10.
+                            event_number = terms[2]
+                            start_date = f"{terms[3]} {terms[4]}"
+                            end_date = f"{terms[5]} {terms[6]}"
 
-                    #     case "delete":
-                    #         # Find what event user wants to delete, delete it
-                    #         # return success or failure
-                    #         NotImplementedError()
+                            event_list = self.calendar.read_events(start_date=start_date, end_date=end_date, num_events=event_number)
+                            n = len(event_list)
+                            if n > 0:
+                                event_str = ""
+                                for i in range(n):
+                                    event_str += f"{i}: {event_list[i][0]} \n"
+                            else:
+                                return "No events found."
+                            
+                        case "add":
+                            # Find where user wants to add event
+                            # return success or failure
+                            
+                            # "calendar add April 18 6:30 April 18 6:45 My Event"
+                            NotImplementedError()
+                            
+                        case "edit":
+                            # Find what event user wants to edit, edit it
+                            # return success or failure
+                            NotImplementedError()
+
+                        case "delete":
+                            # Find what event user wants to delete, delete it
+                            # return success or failure
+                            NotImplementedError()
                 
-                    #     case _:
-                    #         # Ok what do u want user...
-                    #         return f"Could not find tool: {terms[1]} for {terms[0]}" 
+                        case _:
+                            # Ok what do u want user...
+                            return f"Could not find tool: {terms[1]} for {terms[0]}" 
                 case _:
                     # If they don't want any tools, they prob want reasoning
                     return self.cohere.cohere_response(self.convo)
@@ -147,8 +193,7 @@ class BackEnd:
         }]
 
         text_response = self.use_tool(transcribed)
-        
-        text_response += " Anything else I can help with?" # Ensure we ask the user for more stuff
+        print("Responding with", text_response)
         
         audio_buffer = self.text_to_audio(text_response)
         
