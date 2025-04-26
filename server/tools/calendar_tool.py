@@ -175,16 +175,22 @@ class CalendarTool:
 
             match feature.lower():
                 case "start time":
-                    pass
+                    start_date = self.string_to_datetime(new_value)     
+                    start_date = start_date.astimezone(dt.timezone.utc).isoformat()
+                    # print(start_date)
+                    event['start']['datetime'] = start_date 
                 
                 case "end time":
-                    pass
+                    end_date = self.string_to_datetime(new_value)     
+                    end_date = end_date.astimezone(dt.timezone.utc).isoformat()
+                    # print(end_date)
+                    event['end']['datetime'] = end_date 
                 
                 case "location":
-                    pass
+                    event['location'] = new_value
 
                 case "summary":
-                    pass
+                    event['summary'] = new_value
                 
                 case _:
                     ValueError("Could not match input feature to any implemented feature.")
@@ -271,6 +277,7 @@ class CalendarTool:
             print(f"An error occurred: {error}")
     
     
+# Note: We may need to refresh the token every now and then by deleting token.json. 
 if __name__ == '__main__':
     cal = CalendarTool()
     
@@ -287,12 +294,19 @@ if __name__ == '__main__':
     
     # Test adding events - works so far
     cal.add_event(start_date="Monday 10 30", end_date="Monday 12", name="Sharpe Test Event", location="Super Secret Warehouse")
-    cal.add_event(start_date="Monday 10 30", end_date="Monday 12", name="Sharpe Test Event", location="Office 42")
+    cal.add_event(start_date="Monday 10 30", end_date="Monday 15", name="Sharpe Test Event", location="Office 42")
     
     # Test reading events - works, but not if start date is in the past?
-    events = cal.read_events(start_date="April 13th")
+    events = cal.read_events(start_date="April 25th")
     for i in range(len(events)):
         print(i, ":", events[i])
+    
+    # Test updating events
+        # BUG: CANNOT UPDATE FOR DATES BEYOND CURRENT DATE 
+    index = next((i for i, event in enumerate(events) if event[0] == "Sharpe Test Event"), None)
+    cal.update_event(index, feature="end time", new_value="Tuesday 15", event_list=events)
+    cal.update_event(index, feature="summary", new_value="Testing editing Sharpe", event_list=events)
+    cal.update_event(index, feature="location", new_value="Sharpeland", event_list=events)
         
     # Test removing events 
     for i in range(3): # 1-2 should succeed, 3rd iteration should fail
