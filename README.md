@@ -4,6 +4,7 @@ An earpiece voice assistant. A voice-operated asynchronous agent network meant t
 ## TODO:
 
 Sharpe Earpiece:
+- [_] Get app deployable on mobile, replace all unimplemented ones with "coming soon"
 - [_] Convert all current LLM API calls to websocket calls
     - Cohere for internal reasoning
     - Perplexity for research/googling 
