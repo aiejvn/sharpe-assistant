@@ -276,4 +276,8 @@ def call_assistant_endpoint():
 if __name__ == "__main__":
     # For a small voice input (4,5,6), this took 12-13 seconds. Can we cut this down? 
         # Update: this is now 9 seconds.
-    app.run(debug=False, port=5000)
+    load_dotenv()
+    if os.getenv("FLASK_ENV") == "production":    
+        app.run(debug=False, port=5000)
+    else:
+        app.run(debug=True, port=5000)
