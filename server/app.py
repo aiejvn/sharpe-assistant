@@ -229,14 +229,14 @@ class BackEnd:
             print("Client side required...")
             return text_response
     
-    def generate_intro(self)->io.BytesIO:
+    def generate_voice(self, text:str="Hi! I'm Sharpe, your personal hands-free assistant. How may I help you today?"):
         """
-            Generate the startup audio, if it doesn't exist already.
+            Call TTS.
         """
         response = openai.audio.speech.create(
             model="gpt-4o-mini-tts",
             voice="coral",
-            input="Hi! I'm Sharpe, your personal hands-free assistant. How may I help you today?"
+            input=text
         )
             
         audio_buffer = io.BytesIO(response.content) # Write straight to buffer
@@ -290,6 +290,18 @@ def call_assistant_endpoint():
         print("Got error:", str(e))
         return jsonify({"error": str(e)}), 500
     
+@app.route('/voice', methods=['POST'])
+def make_voice():
+    if 'text' not in request.json:
+        return jsonify({"error": "No text provided in the request."}), 400
+
+    user_text = request.json['text']
+    print(f"User passed text: {user_text}")
+    
+    audio = backend.generate_voice(user_text)
+    print(f"Size of audio_buffer: {audio.getbuffer().nbytes} bytes")
+
+    return audio.getvalue(), 200, {'Content-Type': 'audio/mpeg'}
         
 if __name__ == "__main__":
     # For a small voice input (4,5,6), this took 12-13 seconds. Can we cut this down? 
