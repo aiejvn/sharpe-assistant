@@ -140,6 +140,10 @@ class BackEnd:
                     # Google it and return it
                     return ('perplexity_search', self.perplexity.perplexity_response(self.convo)[0])
                 
+                case "desktop":
+                    # Indicate client must parse result
+                    return ('client_side_required', text)
+                
                 # case "calendar":                    
                 #     match terms[1].lower().translate(translator):
                 #         case "view":
@@ -195,7 +199,6 @@ class BackEnd:
                     # If they don't want any tools, they prob want reasoning
                     return ('cohere', self.cohere.cohere_response(self.convo))
         except Exception as e:
-            # Don't know what do => Send them to chatbot
             return ('Error', str(e))
         
     
@@ -213,14 +216,18 @@ class BackEnd:
         print("Used tool:", tool_used)
         print("Responding with", text_response)
         
-        audio_buffer = self.text_to_audio(text_response)
-        
-        self.convo += [{
-            "role": "system",
-            "content": (text_response),
-        }]
-        
-        return audio_buffer
+        if tool_used != 'client_side_required':    
+            audio_buffer = self.text_to_audio(text_response)
+            
+            self.convo += [{
+                "role": "system",
+                "content": (text_response),
+            }]
+            
+            return audio_buffer
+        else:
+            print("Client side required...")
+            return text_response
     
     def generate_intro(self)->io.BytesIO:
         """
@@ -273,8 +280,12 @@ def call_assistant_endpoint():
     print(f"Size of audio_buffer: {audio_buffer.getbuffer().nbytes} bytes")
     
     try:
-        response_audio = backend.full_process(audio_buffer)
-        return response_audio.getvalue(), 200, {'Content-Type': 'audio/mpeg'}
+        response = backend.full_process(audio_buffer)
+        if type(response) != str:
+            return response.getvalue(), 200, {'Content-Type': 'audio/mpeg'}
+        else:
+            return jsonify({"response": response}), 200
+        
     except Exception as e:
         print("Got error:", str(e))
         return jsonify({"error": str(e)}), 500

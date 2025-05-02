@@ -1,6 +1,4 @@
 from dotenv import load_dotenv
-import openai 
-from openai import OpenAI
 import os
 import cohere
 

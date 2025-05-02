@@ -17,6 +17,9 @@ import io
 import sounddevice as sd
 from pydub import AudioSegment
 import requests
+import json
+
+from tool_handler import ClientToolHandler
 
 from audio_configs import CHUNK, CHANNELS, RATE, FORMAT
 
@@ -30,6 +33,8 @@ class AudioLevelApp(App):
         self.debug=debug
         self.threshold=threshold
         self.multiplier=multiplier
+        
+        self.client_tool_handler = ClientToolHandler()
         
         super(AudioLevelApp, self).__init__()
         
@@ -179,46 +184,53 @@ class AudioLevelApp(App):
         # Not actually passing a file?
         audio_file.seek(0)
         response = requests.post("http://127.0.0.1:5000/call_assistant", files={"audio": audio_file})
-        response_audio = io.BytesIO(response.content)
-        print(f"Size of audio_buffer: {response_audio.getbuffer().nbytes} bytes")
-
-        # Save to local memory for debug purposes
-        if self.debug:        
-            with open("output.mp3", "wb") as f:
-                audio_file.seek(0)
-                f.write(audio_file.getvalue())
-            print("Recoding saved to output.mp3")
-        
-            with open("agent_output.mp3", "wb") as f:
-                response_audio.seek(0)
-                f.write(response_audio.getvalue())
-            print("Recoding saved to agent_output.wav")
-            
-        # Play audio back to user
-        response_audio.seek(0)
-        
-        audio = AudioSegment.from_mp3(response_audio)
-        
-        sample_rate = audio.frame_rate
-        num_channels = audio.channels
-        sample_width = audio.sample_width
                 
-        raw_data = np.array(audio.get_array_of_samples())
-        if sample_width == 2:
-            dtype = np.int16
-        elif sample_width == 4:
-            dtype = np.int32
-        else:
-            dtype = np.int8
+        try:
+            response_audio = io.BytesIO(response.content)
+            print(f"Size of audio_buffer: {response_audio.getbuffer().nbytes} bytes")
+
+            # Save to local memory for debug purposes
+            if self.debug:        
+                with open("output.mp3", "wb") as f:
+                    audio_file.seek(0)
+                    f.write(audio_file.getvalue())
+                print("Recoding saved to output.mp3")
             
-        audio_array = raw_data.astype(dtype)
-        
-        if num_channels > 1: # reshape array for multi channel audio
-            audio_array = audio_array.reshape(-1, num_channels)
+                with open("agent_output.mp3", "wb") as f:
+                    response_audio.seek(0)
+                    f.write(response_audio.getvalue())
+                print("Recoding saved to agent_output.wav")
+                
+            # Play audio back to user
+            response_audio.seek(0)
             
-        # Play audio, and wait until it finishes
-        sd.play(audio_array, samplerate=sample_rate)
-        # sd.wait()
+            audio = AudioSegment.from_mp3(response_audio)
+            
+            sample_rate = audio.frame_rate
+            num_channels = audio.channels
+            sample_width = audio.sample_width
+                    
+            raw_data = np.array(audio.get_array_of_samples())
+            if sample_width == 2:
+                dtype = np.int16
+            elif sample_width == 4:
+                dtype = np.int32
+            else:
+                dtype = np.int8
+                
+            audio_array = raw_data.astype(dtype)
+            
+            if num_channels > 1: # reshape array for multi channel audio
+                audio_array = audio_array.reshape(-1, num_channels)
+                
+            # Play audio, and wait until it finishes
+            sd.play(audio_array, samplerate=sample_rate)
+            # sd.wait()
+        except:
+            response_text = json.loads(response.content.decode())["response"]
+            # print(type(response.content), response.content)
+            # If we fail, either input was invalid or we should use a client-side tool.
+            self.client_tool_handler.handle_input(response_text)
 
     def on_stop(self):
         # Clean up mic audio stream
