@@ -13,11 +13,18 @@ from geopy.exc import GeocoderTimedOut
 # MCP
 from tools.cohere_tool import CohereTool
 from tools.perplexity_tool import PerplexityTool
-from tools.calendar_tool import CalendarTool
+# from tools.calendar_tool import CalendarTool
 
 import string
 
 from flask import Flask, request, jsonify
+
+# From root of project, run:
+# docker run --env-file ./server/.env --name test-ls kyjvn/flaskapp 
+# to spin up an image.
+
+# To stop:
+# docker stop test-ls && docker rm test-ls
 
 app = Flask(__name__)
 
@@ -33,7 +40,7 @@ class BackEnd:
 
         self.perplexity = PerplexityTool(streaming=self.streaming)        
         self.cohere = CohereTool(streaming=self.streaming)
-        self.calendar = CalendarTool()        
+        # self.calendar = CalendarTool()        
         
         self.convo = [
             {
@@ -133,57 +140,57 @@ class BackEnd:
                     # Google it and return it
                     return ('perplexity_search', self.perplexity.perplexity_response(self.convo)[0])
                 
-                case "calendar":                    
-                    match terms[1].lower().translate(translator):
-                        case "view":
-                            # Find the conditions on which user wants to view events
-                            # return them
+                # case "calendar":                    
+                #     match terms[1].lower().translate(translator):
+                #         case "view":
+                #             # Find the conditions on which user wants to view events
+                #             # return them
                             
                             
-                            # "calendar view 10 April 25 May 10"
-                                # event number (if exists)
-                                # start date
-                                # end date
+                #             # "calendar view 10 April 25 May 10"
+                #                 # event number (if exists)
+                #                 # start date
+                #                 # end date
                             
-                            # -> FOUND USER SAID: Calendar, view 10, Monday 12, Tuesday 14.
-                                # Months kinda buggy rn
-                            print("Now viewing calendar events...")
+                #             # -> FOUND USER SAID: Calendar, view 10, Monday 12, Tuesday 14.
+                #                 # Months kinda buggy rn
+                #             print("Now viewing calendar events...")
                                 
-                            event_number = int(terms[2].translate(translator))
-                            start_date = f"{terms[3]} {terms[4]}".translate(translator)
-                            end_date = f"{terms[5]} {terms[6]}".translate(translator)
+                #             event_number = int(terms[2].translate(translator))
+                #             start_date = f"{terms[3]} {terms[4]}".translate(translator)
+                #             end_date = f"{terms[5]} {terms[6]}".translate(translator)
 
-                            event_list = self.calendar.read_events(start_date=start_date, end_date=end_date, num_events=event_number)
-                            if event_list: 
-                                n = len(event_list)
-                                event_str = ""
-                                for i in range(n):
-                                    event_str += f"Event {i}: {event_list[i][0]} \n"
-                                print("Found events:", event_str)
-                                return ('calendar', event_str)
-                            else:
-                                return ('calendar', "No events found.")
+                #             event_list = self.calendar.read_events(start_date=start_date, end_date=end_date, num_events=event_number)
+                #             if event_list: 
+                #                 n = len(event_list)
+                #                 event_str = ""
+                #                 for i in range(n):
+                #                     event_str += f"Event {i}: {event_list[i][0]} \n"
+                #                 print("Found events:", event_str)
+                #                 return ('calendar', event_str)
+                #             else:
+                #                 return ('calendar', "No events found.")
                             
-                        case "add":
-                            # Find where user wants to add event
-                            # return success or failure
+                #         case "add":
+                #             # Find where user wants to add event
+                #             # return success or failure
                             
-                            # "calendar add April 18 6:30 April 18 6:45 My Event"
-                            NotImplementedError()
+                #             # "calendar add April 18 6:30 April 18 6:45 My Event"
+                #             NotImplementedError()
                             
-                        case "edit":
-                            # Find what event user wants to edit, edit it
-                            # return success or failure
-                            NotImplementedError()
+                #         case "edit":
+                #             # Find what event user wants to edit, edit it
+                #             # return success or failure
+                #             NotImplementedError()
 
-                        case "delete":
-                            # Find what event user wants to delete, delete it
-                            # return success or failure
-                            NotImplementedError()
+                #         case "delete":
+                #             # Find what event user wants to delete, delete it
+                #             # return success or failure
+                #             NotImplementedError()
                 
-                        case _:
-                            # Ok what do u want user...
-                            return ('Tool Not Found', f"Could not find tool: {terms[1]} for {terms[0]}" )
+                #         case _:
+                #             # Ok what do u want user...
+                #             return ('Tool Not Found', f"Could not find tool: {terms[1]} for {terms[0]}" )
                 case _:
                     # If they don't want any tools, they prob want reasoning
                     return ('cohere', self.cohere.cohere_response(self.convo))
