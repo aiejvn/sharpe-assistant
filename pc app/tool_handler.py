@@ -25,8 +25,7 @@ class ClientToolHandler:
                             for word in terms[2:]:
                                 query += f"{word} "
                             self.chrome.search_google_chrome(query)
-                            status, res = self.chrome.form_submit_chrome("q")
-                            print(status, res)
+                            return self.chrome.form_submit_chrome("q")
                             
         except Exception as e:
             return (1, "Could not find tools. Error " + e)

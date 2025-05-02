@@ -6,10 +6,6 @@ from dotenv import load_dotenv
 import io
 import os
 
-# Location
-from geopy.geocoders import Photon
-from geopy.exc import GeocoderTimedOut
-
 # MCP
 from tools.cohere_tool import CohereTool
 from tools.perplexity_tool import PerplexityTool
@@ -54,32 +50,6 @@ class BackEnd:
                 ),
             },
         ]
-        #enhancing through pedalboard
-        # self.board =  Pedalboard([
-        #     NoiseGate(threshold_db=-30, ratio=1.5, release_ms=250),
-        #     Compressor(threshold_db=-16, ratio=4),
-        #     LowShelfFilter(cutoff_frequency_hz=400, gain_db=10, q=1),
-        #     Gain(gain_db=2)
-        # ])
-        
-    # def fix_audio(self, audio_path:str):
-    #     """
-    #         Use Pedalboard and NoiseReduce to remove noise from a file
-    #         and improve sound quality.
-    #         Takes a path to the file as input.
-    #     """
-    #     sr = 44100
-    #     with AudioFile(audio_path).resampled_to(sr) as f:
-    #         audio = f.read(f.frames)
-            
-    #     reduced_noise = nr.reduce_noise(y=audio, sr=sr, stationary=True, prop_decrease=0.75)
-    #     effected = self.board(reduced_noise, sr)
-        
-    #     output_path = "./user_input_enhanced.mp3"
-    #     with AudioFile(output_path, 'w', sr, effected.shape[0]) as f:
-    #         f.write(effected)
-            
-    #     return output_path
         
     def audio_to_text(self, audio_file:io.BytesIO)->str:
         audio_file.seek(0) # Reset file pointer to beginning
@@ -128,11 +98,15 @@ class BackEnd:
             in constant time, and return a fitting result in tuple(tool:str, res:str) form.
             Note: this is not natural language input, but rather command input
             parsed algorithmically.
-        """
+        """        
         translator = str.maketrans('', '', string.punctuation)
         terms = text.split()
+        if len(terms) < 2:
+            return ('cohere', self.cohere.cohere_response(self.convo)) # Handle input smaller than two words.
+        
         print(terms[0].lower().translate(translator))
         print(terms[1].lower().translate(translator))
+        print(terms[2:])
         try:
             match terms[0].lower().translate(translator):
                 case "search":
@@ -143,6 +117,11 @@ class BackEnd:
                 case "desktop":
                     # Indicate client must parse result
                     return ('client_side_required', text)
+                
+                case _:
+                    print("Using cohere.")
+                    # If they don't want any tools, they prob want reasoning
+                    return ('cohere', self.cohere.cohere_response(self.convo))
                 
                 # case "calendar":                    
                 #     match terms[1].lower().translate(translator):
@@ -195,9 +174,6 @@ class BackEnd:
                 #         case _:
                 #             # Ok what do u want user...
                 #             return ('Tool Not Found', f"Could not find tool: {terms[1]} for {terms[0]}" )
-                case _:
-                    # If they don't want any tools, they prob want reasoning
-                    return ('cohere', self.cohere.cohere_response(self.convo))
         except Exception as e:
             return ('Error', str(e))
         
@@ -244,24 +220,6 @@ class BackEnd:
       
         return audio_buffer
         
-    def get_user_location(self):
-        """
-            Get the user's location, for more localized requests with perplexity.
-        """
-        geolocator = Photon(user_agent="measurements")
-        
-        try:
-            location = geolocator.geocode("", exactly_one=True, timeout=10)
-            if location:
-                address = location.raw.get('address', {})
-                return address
-            else:
-                return "Queen's University, Kingston, Ontario"
-                
-        except GeocoderTimedOut:
-            print("Geocoding services time out")
-            return "Queen's University, Kingston, Ontario"
-    
     
 # ----- APP STUFF -----
 backend = BackEnd()

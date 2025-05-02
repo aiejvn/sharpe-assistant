@@ -166,6 +166,42 @@ class AudioLevelApp(App):
             
             print("Recording...", len(self.frames))
             
+            
+    def play_audio(self, audio:bytes):
+        response_audio = io.BytesIO(audio)
+        print(f"Size of audio_buffer: {response_audio.getbuffer().nbytes} bytes")
+
+        # Save to local memory for debug purposes
+        if self.debug:        
+            with open("agent_output.mp3", "wb") as f:
+                response_audio.seek(0)
+                f.write(response_audio.getvalue())
+            print("Recoding saved to agent_output.wav")
+            
+        # Play audio back to user
+        response_audio.seek(0)
+        
+        audio = AudioSegment.from_mp3(response_audio)
+        
+        sample_rate = audio.frame_rate
+        num_channels = audio.channels
+        sample_width = audio.sample_width
+                
+        raw_data = np.array(audio.get_array_of_samples())
+        if sample_width == 2:
+            dtype = np.int16
+        elif sample_width == 4:
+            dtype = np.int32
+        else:
+            dtype = np.int8
+            
+        audio_array = raw_data.astype(dtype)
+        
+        if num_channels > 1: # reshape array for multi channel audio
+            audio_array = audio_array.reshape(-1, num_channels)
+            
+        # Play audio, and wait until it finishes
+        sd.play(audio_array, samplerate=sample_rate)
     
     def save_audio(self):
         # Save recorded audio to WAV file
@@ -180,57 +216,27 @@ class AudioLevelApp(App):
             wf.setframerate(RATE)
             wf.writeframes(b"".join(self.frames))
             
-        # Pass to agent, get voice output
-        # Not actually passing a file?
+        with open("output.mp3", "wb") as f:
+            audio_file.seek(0)
+            f.write(audio_file.getvalue())
+        print("Recoding saved to output.mp3")
+    
         audio_file.seek(0)
         response = requests.post("http://127.0.0.1:5000/call_assistant", files={"audio": audio_file})
                 
         try:
-            response_audio = io.BytesIO(response.content)
-            print(f"Size of audio_buffer: {response_audio.getbuffer().nbytes} bytes")
-
-            # Save to local memory for debug purposes
-            if self.debug:        
-                with open("output.mp3", "wb") as f:
-                    audio_file.seek(0)
-                    f.write(audio_file.getvalue())
-                print("Recoding saved to output.mp3")
-            
-                with open("agent_output.mp3", "wb") as f:
-                    response_audio.seek(0)
-                    f.write(response_audio.getvalue())
-                print("Recoding saved to agent_output.wav")
-                
-            # Play audio back to user
-            response_audio.seek(0)
-            
-            audio = AudioSegment.from_mp3(response_audio)
-            
-            sample_rate = audio.frame_rate
-            num_channels = audio.channels
-            sample_width = audio.sample_width
-                    
-            raw_data = np.array(audio.get_array_of_samples())
-            if sample_width == 2:
-                dtype = np.int16
-            elif sample_width == 4:
-                dtype = np.int32
-            else:
-                dtype = np.int8
-                
-            audio_array = raw_data.astype(dtype)
-            
-            if num_channels > 1: # reshape array for multi channel audio
-                audio_array = audio_array.reshape(-1, num_channels)
-                
-            # Play audio, and wait until it finishes
-            sd.play(audio_array, samplerate=sample_rate)
-            # sd.wait()
+            self.play_audio(response.content)
         except:
-            response_text = json.loads(response.content.decode())["response"]
-            # print(type(response.content), response.content)
-            # If we fail, either input was invalid or we should use a client-side tool.
-            self.client_tool_handler.handle_input(response_text)
+            
+            try:
+                response_text = json.loads(response.content.decode())["response"]
+                
+                # If we fail, either input was invalid or we should use a client-side tool.
+                (status, res) = self.client_tool_handler.handle_input(response_text)
+                response = requests.post("http://127.0.0.1:5000/voice", json={"text": res})
+                self.play_audio(response.content)
+            except Exception as e:
+                print("Got error from us: " + str(e))
 
     def on_stop(self):
         # Clean up mic audio stream
