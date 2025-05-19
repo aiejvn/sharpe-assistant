@@ -331,3 +331,62 @@ if __name__ == '__main__':
     for i in range(3): # 1-2 should succeed, 3rd iteration should fail
         index = next((i for i, event in enumerate(events) if event[0] == "Sharpe Test Event"), None)
         cal.remove_event(index, events)
+        
+        
+    """
+        Old MCP code for using the calendar tool.
+        Was taking up too much space in the main app file.
+    """
+        
+                
+                # case "calendar":                    
+                #     match terms[1].lower().translate(translator):
+                #         case "view":
+                #             # Find the conditions on which user wants to view events
+                #             # return them
+                            
+                            
+                #             # "calendar view 10 April 25 May 10"
+                #                 # event number (if exists)
+                #                 # start date
+                #                 # end date
+                            
+                #             # -> FOUND USER SAID: Calendar, view 10, Monday 12, Tuesday 14.
+                #                 # Months kinda buggy rn
+                #             print("Now viewing calendar events...")
+                                
+                #             event_number = int(terms[2].translate(translator))
+                #             start_date = f"{terms[3]} {terms[4]}".translate(translator)
+                #             end_date = f"{terms[5]} {terms[6]}".translate(translator)
+
+                #             event_list = self.calendar.read_events(start_date=start_date, end_date=end_date, num_events=event_number)
+                #             if event_list: 
+                #                 n = len(event_list)
+                #                 event_str = ""
+                #                 for i in range(n):
+                #                     event_str += f"Event {i}: {event_list[i][0]} \n"
+                #                 print("Found events:", event_str)
+                #                 return ('calendar', event_str)
+                #             else:
+                #                 return ('calendar', "No events found.")
+                            
+                #         case "add":
+                #             # Find where user wants to add event
+                #             # return success or failure
+                            
+                #             # "calendar add April 18 6:30 April 18 6:45 My Event"
+                #             NotImplementedError()
+                            
+                #         case "edit":
+                #             # Find what event user wants to edit, edit it
+                #             # return success or failure
+                #             NotImplementedError()
+
+                #         case "delete":
+                #             # Find what event user wants to delete, delete it
+                #             # return success or failure
+                #             NotImplementedError()
+                
+                #         case _:
+                #             # Ok what do u want user...
+                #             return ('Tool Not Found', f"Could not find tool: {terms[1]} for {terms[0]}" )

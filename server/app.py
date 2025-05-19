@@ -1,3 +1,4 @@
+# API's
 import openai 
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -5,6 +6,18 @@ from dotenv import load_dotenv
 # Audio
 import io
 import os
+
+# Realtime API
+import json
+import socks
+import socket
+import websocket
+import threading
+import base64
+import time
+
+socket.socket = socks.socksocket
+WS_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01'
 
 # MCP
 from tools.cohere_tool import CohereTool
@@ -38,6 +51,7 @@ class BackEnd:
         self.cohere = CohereTool(streaming=self.streaming)
         # self.calendar = CalendarTool()        
         
+        # TODO: Move this to session_config when done implementing Realtime API
         self.convo = [
             {
                 "role": "system",
@@ -50,6 +64,242 @@ class BackEnd:
                 ),
             },
         ]
+        
+        self.audio_buffer = bytearray()
+        
+        # Testing Realtime API stuff
+        self.test_realtime_api_with_mp3()
+        
+        # Initialization of Realtime API stuff
+        self.connect_to_openai()
+        
+        
+    # ===== REALTIME API STARTS HERE ===== 
+    
+    def receive_audio_from_websocket(self, ws):
+        global audio_buffer
+        
+        try:
+            while True: # No stop condition since we're on a server
+                message = ws.recv()
+                if not message: # empty message (EOF or connection closed)
+                    print('Received empty message (possible EOF or WebSocket closing')
+                
+                message = json.loads(message)
+                event_type = message['type']
+                print(f'Received WebSocket Event: {event_type}')
+                
+                match event_type:
+                    case 'session.created':
+                        self.send_session_update(ws)
+                    
+                    case 'response.audio.delta':
+                        audio_content = base64.b64decode(message['delta'])
+                        self.audio_buffer.extend(audio_content)
+                        print(f'Received {len(audio_content)} bytes. Total audio buffer size: {len(self.audio_buffer)}')
+                    
+                    case 'input_audio_buffer.speech_started':
+                        audio_content = base64.b64decode(message['delta'])
+                        self.clear_audio_buffer()
+                        self.stop_audio_playback()
+                        
+                    case 'response.audio.done':
+                        print('AI is finished speaking.')
+                    
+                    case 'response.function_call_arguments.done':
+                        self.handle_function_call(message, ws)
+                
+                
+        except Exception as e:
+            print(f"Error receiving audio: {e}")
+        finally:
+            print('Exiting receive_audio_from_websocket thread.')
+            
+    
+    def handle_function_call(event_json, ws):
+        """
+            Tool-calling goes here.
+            OpenAI decides it on their end.
+        """
+        try:
+            # 2nd arg is default value (if value is not found)
+            name = event_json.get('name', "")
+            call_id = event_json.get("call_id", "")
+
+            arguments = event_json.get("arguments", "{}")
+            function_call_args = json.loads(arguments)
+            
+            print("Found following for function call:", name, call_id, arguments, function_call_args)
+            
+        except Exception as e:
+            print(f"Error parsing function call arguments: {e}")
+    
+            
+            
+    def clear_audio_buffer(self):
+        global audio_buffer
+        audio_buffer = bytearray()
+        print('Audio buffer cleared.')
+    
+    
+    def stop_audio_playback(self):
+        return 
+
+        # TODO: Fill this in
+        stop_client_playing(client_ws)
+
+                        
+    def send_session_update(self, ws):
+        from session_config import realtime_api_config 
+        
+        # Declare initial prompt, tools, etc. 
+        session_config = realtime_api_config
+        
+        # Convert session config to JSON string
+        print("Attempting to send session update.")
+        session_config_json = json.dumps(session_config)
+        
+        try:
+            ws.send(session_config_json)
+        except Exception as e:
+            print(f"Failed to send session update: {e}")
+                        
+        
+    def send_audio_to_websocket(self, ws, audio:io.BytesIO):
+        audio.seek(0) # Reset file pointer to beginning
+        print(f"Size of audio file input: {audio.getbuffer().nbytes} bytes")
+        CHUNK_SIZE = 4096
+        
+        try:
+            while True:
+                chunk = audio.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                
+                encoded_chunk = base64.b64encode(chunk).decode('utf-8')
+                message = json.dumps({
+                    'type': 'input_audio_buffer.append',
+                    'audio': encoded_chunk
+                })
+                ws.send(message)
+                print(f'Sent {len(chunk)} bytes of audio data to OpenAI realtime API.')
+        except Exception as e:
+            print(f'Exception in send_audio_to_websocket thread: {e}')
+        finally:
+            print('Exiting send_audio_to_websocket thread')
+            
+            
+    def create_connection_with_ipv4(self, *args, **kwargs):
+        """
+            Creates a websocket connection using IPv4.
+        """
+        # Enforce use of IPv4
+        original_getaddrinfo = socket.getaddrinfo
+        
+        # socket.AF_INET forces IPv4 protocol 
+        def getaddrinfo_ipv4(host, port, family=socket.AF_INET, *args):
+            return original_getaddrinfo(host, port, socket.AF_INET, *args) 
+        
+        # Monkey-patch function for IPv4 connection, then replace it iwth the original when done
+        socket.getaddrinfo = getaddrinfo_ipv4
+        try:
+            return websocket.create_connection(*args, **kwargs)
+        finally:
+            socket.getaddrinfo = original_getaddrinfo
+        
+        
+    def connect_to_openai(self, api_key):
+        """
+            Start up a websocket connection to OpenAI's realtime API.
+        """
+        ws = None
+        try:
+            ws = self.create_connection_with_ipv4(
+                WS_URL,
+                header = [
+                    f'Authorization: Bearer {api_key}',
+                    'OpenAI-Beta: realtime=v1'
+                ]
+            )
+            print('Connected to OpenAI Websocket.')
+            
+            # Start the recv and send threads
+            # These will run independently of the function, terminating when their target functions terminate
+            receive_thread = threading.Thread(target=self.receive_audio_from_websocket, args=(ws,))
+            receive_thread.start()
+            
+            """
+                When we receive audio from the client, send it to the websocket.
+                We do not need to make another thread for this.
+            """
+            # mic_thread = threading.Thread(target=self.send_audio_to_websocket, args=(ws,audio_buffer,))
+            # mic_thread.start()
+            
+        except Exception as e:
+            print(f'Failed to connect to OpenAI: {e}')
+            
+    
+    def test_realtime_api_with_mp3(self):
+        """
+            Function to test if realtime API works.
+        """
+        
+        with open("user_input.mp3", "rb") as f:
+            audio_buffer = io.BytesIO(f.read())
+        audio_buffer.seek(0)
+        
+        output_audio = bytearray() # Maybe try a io.BytesIO object instead. bytearray() seems to be buggy.
+        
+        def test_receive_audio_from_websocket(ws):
+            try:
+                while True:
+                    message = ws.recv()
+                    if not message: 
+                        break
+                    
+                    message = json.loads(message)
+                    print(message)
+                    event_type = message['type']
+                    if event_type == 'response.audio.delta':
+                        audio_content = base64.b64decode(message['delta'])
+                        output_audio.extend(audio_content)
+                        print(f'Received voice data from AI. Output is now {len(output_audio)} bytes.')
+                    elif event_type == 'response.audio.done':
+                        print('AI is finished speaking.')
+                        break
+            except Exception as e:
+                print(f'Error receiving audio: {e}')
+            finally:
+                print('Exiting test_receive_audio_from_websocket')
+                
+        api_key = os.getenv('OPENAI_API_KEY')
+        ws = self.create_connection_with_ipv4(
+            WS_URL,
+            header=[
+                f'Authorization: Bearer {api_key}',
+                'OpenAI-Beta: realtime=v1'
+            ]
+        )
+        print('Connected to OpenAI Websocket for test.')
+
+        # Start receiver thread
+        recv_thread = threading.Thread(target=test_receive_audio_from_websocket, args=(ws,))
+        recv_thread.start()
+        
+        self.send_audio_to_websocket(ws, audio_buffer)
+
+        # Wait for receiver to finish
+        recv_thread.join(timeout=30)
+
+        # Save output
+        output_path = 'realtime_output.mp3'
+        print(f"Writing output to {output_path}...")
+        with open(output_path, "wb") as f:
+            f.write(io.BytesIO(output_audio).getvalue())
+        print(f"Saved output to {output_path}.")
+    
+            
+    # ===== REALTIME API ENDS HERE =====
         
     def audio_to_text(self, audio_file:io.BytesIO)->str:
         audio_file.seek(0) # Reset file pointer to beginning
@@ -123,57 +373,6 @@ class BackEnd:
                     # If they don't want any tools, they prob want reasoning
                     return ('cohere', self.cohere.cohere_response(self.convo))
                 
-                # case "calendar":                    
-                #     match terms[1].lower().translate(translator):
-                #         case "view":
-                #             # Find the conditions on which user wants to view events
-                #             # return them
-                            
-                            
-                #             # "calendar view 10 April 25 May 10"
-                #                 # event number (if exists)
-                #                 # start date
-                #                 # end date
-                            
-                #             # -> FOUND USER SAID: Calendar, view 10, Monday 12, Tuesday 14.
-                #                 # Months kinda buggy rn
-                #             print("Now viewing calendar events...")
-                                
-                #             event_number = int(terms[2].translate(translator))
-                #             start_date = f"{terms[3]} {terms[4]}".translate(translator)
-                #             end_date = f"{terms[5]} {terms[6]}".translate(translator)
-
-                #             event_list = self.calendar.read_events(start_date=start_date, end_date=end_date, num_events=event_number)
-                #             if event_list: 
-                #                 n = len(event_list)
-                #                 event_str = ""
-                #                 for i in range(n):
-                #                     event_str += f"Event {i}: {event_list[i][0]} \n"
-                #                 print("Found events:", event_str)
-                #                 return ('calendar', event_str)
-                #             else:
-                #                 return ('calendar', "No events found.")
-                            
-                #         case "add":
-                #             # Find where user wants to add event
-                #             # return success or failure
-                            
-                #             # "calendar add April 18 6:30 April 18 6:45 My Event"
-                #             NotImplementedError()
-                            
-                #         case "edit":
-                #             # Find what event user wants to edit, edit it
-                #             # return success or failure
-                #             NotImplementedError()
-
-                #         case "delete":
-                #             # Find what event user wants to delete, delete it
-                #             # return success or failure
-                #             NotImplementedError()
-                
-                #         case _:
-                #             # Ok what do u want user...
-                #             return ('Tool Not Found', f"Could not find tool: {terms[1]} for {terms[0]}" )
         except Exception as e:
             return ('Error', str(e))
         
