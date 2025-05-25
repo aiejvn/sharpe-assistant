@@ -15,6 +15,8 @@ import websocket
 import threading
 import base64
 import time
+import pyaudio
+from audio_configs import *
 
 socket.socket = socks.socksocket
 WS_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01'
@@ -67,17 +69,47 @@ class BackEnd:
         
         self.audio_buffer = bytearray()
         
+        # Initialization of Realtime API stuff
+        self.ws = self.connect_to_openai(api_key=os.getenv('OPENAI_API_KEY'))
+        self.ws = None
+        
+        p = pyaudio.PyAudio()
+        
+        speaker_stream = p.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=24000,
+            output=True,
+            stream_callback=self.speaker_callback,
+            frames_per_buffer=CHUNK
+        )
+        
+        self.audio_buffer = bytearray() 
+
+        p = pyaudio.PyAudio()
+        
+        # Audio playing stuff, move to front-end 
+        # self.speaker_stream = p.open(
+        #     format=FORMAT,
+        #     channels=CHANNELS,
+        #     rate=24000,
+        #     output=True,
+        #     stream_callback=self.speaker_callback,
+        #     frames_per_buffer=CHUNK
+        # )
+        # self.speaker_stream.start_stream()
+
+        self.speaker_stream = None
+
         # Testing Realtime API stuff
         self.test_realtime_api_with_mp3()
-        
-        # Initialization of Realtime API stuff
-        self.connect_to_openai()
+    
         
         
     # ===== REALTIME API STARTS HERE ===== 
     
     def receive_audio_from_websocket(self, ws):
-        global audio_buffer
+        self.audio_buffer
         
         try:
             while True: # No stop condition since we're on a server
@@ -99,7 +131,7 @@ class BackEnd:
                         print(f'Received {len(audio_content)} bytes. Total audio buffer size: {len(self.audio_buffer)}')
                     
                     case 'input_audio_buffer.speech_started':
-                        audio_content = base64.b64decode(message['delta'])
+                        print("New speech started, clearing buffer and stopping playback.")
                         self.clear_audio_buffer()
                         self.stop_audio_playback()
                         
@@ -137,15 +169,15 @@ class BackEnd:
             
             
     def clear_audio_buffer(self):
-        global audio_buffer
-        audio_buffer = bytearray()
+        self.audio_buffer
+        self.audio_buffer = bytearray()
         print('Audio buffer cleared.')
     
     
     def stop_audio_playback(self):
+        # TODO: Fill this in with our tool decide commands
         return 
 
-        # TODO: Fill this in
         stop_client_playing(client_ws)
 
                         
@@ -234,70 +266,56 @@ class BackEnd:
             """
             # mic_thread = threading.Thread(target=self.send_audio_to_websocket, args=(ws,audio_buffer,))
             # mic_thread.start()
+            return ws
             
         except Exception as e:
             print(f'Failed to connect to OpenAI: {e}')
+            
+    def speaker_callback(self, in_data, frame_count, time_info, status):
+        """
+            Function to handle received audio playback.
+            Runs on a thread to automatically play audio data when called.
+        """
+        bytes_needed = frame_count * 2
+        current_buffer_size = len(self.audio_buffer)
+        
+        if current_buffer_size >= bytes_needed:
+            # Take the first n bytes off the bytearray
+            audio_chunk = bytes(self.audio_buffer[:bytes_needed])
+            self.audio_buffer = self.audio_buffer[bytes_needed:]
+        else:
+            # Pad the rest of the data with empty bytes
+            audio_chunk = bytes(self.audio_buffer) + b'\x00' * (bytes_needed - current_buffer_size)
+            self.audio_buffer.clear()
+            
+        return (audio_chunk, pyaudio.paContinue) 
+    
+    
+    def output_audio_thread(self):
+        """
+            Plays self.audio_buffer on a separate thread when called.
+        """
             
     
     def test_realtime_api_with_mp3(self):
         """
             Function to test if realtime API works.
+            Saving to output seems to have some issues. 
         """
         
         with open("user_input.mp3", "rb") as f:
-            audio_buffer = io.BytesIO(f.read())
-        audio_buffer.seek(0)
-        
-        output_audio = bytearray() # Maybe try a io.BytesIO object instead. bytearray() seems to be buggy.
-        
-        def test_receive_audio_from_websocket(ws):
-            try:
-                while True:
-                    message = ws.recv()
-                    if not message: 
-                        break
-                    
-                    message = json.loads(message)
-                    print(message)
-                    event_type = message['type']
-                    if event_type == 'response.audio.delta':
-                        audio_content = base64.b64decode(message['delta'])
-                        output_audio.extend(audio_content)
-                        print(f'Received voice data from AI. Output is now {len(output_audio)} bytes.')
-                    elif event_type == 'response.audio.done':
-                        print('AI is finished speaking.')
-                        break
-            except Exception as e:
-                print(f'Error receiving audio: {e}')
-            finally:
-                print('Exiting test_receive_audio_from_websocket')
-                
-        api_key = os.getenv('OPENAI_API_KEY')
-        ws = self.create_connection_with_ipv4(
-            WS_URL,
-            header=[
-                f'Authorization: Bearer {api_key}',
-                'OpenAI-Beta: realtime=v1'
-            ]
-        )
-        print('Connected to OpenAI Websocket for test.')
+            input_audio = io.BytesIO(f.read())
+        input_audio.seek(0)
 
         # Start receiver thread
-        recv_thread = threading.Thread(target=test_receive_audio_from_websocket, args=(ws,))
+        recv_thread = threading.Thread(target=self.receive_audio_from_websocket, args=(self.ws,))
         recv_thread.start()
         
-        self.send_audio_to_websocket(ws, audio_buffer)
+        self.send_audio_to_websocket(self.ws, input_audio)
 
         # Wait for receiver to finish
         recv_thread.join(timeout=30)
 
-        # Save output
-        output_path = 'realtime_output.mp3'
-        print(f"Writing output to {output_path}...")
-        with open(output_path, "wb") as f:
-            f.write(io.BytesIO(output_audio).getvalue())
-        print(f"Saved output to {output_path}.")
-    
             
     # ===== REALTIME API ENDS HERE =====
         
