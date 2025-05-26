@@ -53,25 +53,10 @@ class BackEnd:
         self.cohere = CohereTool(streaming=self.streaming)
         # self.calendar = CalendarTool()        
         
-        # TODO: Move this to session_config when done implementing Realtime API
-        self.convo = [
-            {
-                "role": "system",
-                "content": (
-                    "You are Sharpe, an artificial intelligence assistant, and you need to "
-                    "engage in a helpful, detailed, polite conversation with a user. "
-                    # f"This user lives at {address}. Incorporate this into your search IF AND ONLY IF "
-                    f"This user lives near Queen's University, Kingston, Ontario. Incorporate this into your search IF AND ONLY IF the user asks for anything related to location."
-                    "Keep responses as brief as possible. Finish your responses by asking if the user if they need help with anything else."
-                ),
-            },
-        ]
-        
         self.audio_buffer = bytearray()
         
         # Initialization of Realtime API stuff
         self.ws = self.connect_to_openai(api_key=os.getenv('OPENAI_API_KEY'))
-        self.ws = None
         
         p = pyaudio.PyAudio()
         
@@ -148,11 +133,17 @@ class BackEnd:
             print('Exiting receive_audio_from_websocket thread.')
             
     
-    def handle_function_call(event_json, ws):
+    def handle_function_call(self, event_json, ws):
         """
             Tool-calling goes here.
             OpenAI decides it on their end.
         """
+        
+        # Example json input: 
+        # name=search 
+        # call_id=call_319SRx808YpFiXuC 
+        # arguments={"query":"new laptops 2025"} 
+        # function_arguments={'query': 'new laptops 2025'}
         try:
             # 2nd arg is default value (if value is not found)
             name = event_json.get('name', "")
@@ -162,6 +153,8 @@ class BackEnd:
             function_call_args = json.loads(arguments)
             
             print("Found following for function call:", name, call_id, arguments, function_call_args)
+            
+            # Add search->perplexity here
             
         except Exception as e:
             print(f"Error parsing function call arguments: {e}")
@@ -175,7 +168,6 @@ class BackEnd:
     
     
     def stop_audio_playback(self):
-        # TODO: Fill this in with our tool decide commands
         return 
 
         stop_client_playing(client_ws)
@@ -291,12 +283,36 @@ class BackEnd:
         return (audio_chunk, pyaudio.paContinue) 
     
     
-    def output_audio_thread(self):
+    def create_output_audio_thread(self):
         """
             Plays self.audio_buffer on a separate thread when called.
         """
-            
+        recv_thread = threading.Thread(target=self.receive_audio_from_websocket, args=(self.ws,))
+        recv_thread.start()
+        
+        return recv_thread
+        
     
+    def full_process(self, audio:io.BytesIO):
+        """
+            General function to call for processing a user's request.
+            
+            - audio: the io.BytesIO representation of the input.
+            
+            Note: The audio data type may change once we set up websockets
+            between the front-end and the server.l    
+        """
+        audio.seek(0)        
+        
+        # Main command flow
+        recv_thread = self.create_output_audio_thread()
+        
+        self.send_audio_to_websocket(self.ws, audio)
+
+        # Wait for receiver to finish
+        recv_thread.join(timeout=30)
+    
+            
     def test_realtime_api_with_mp3(self):
         """
             Function to test if realtime API works.
@@ -305,16 +321,8 @@ class BackEnd:
         
         with open("user_input.mp3", "rb") as f:
             input_audio = io.BytesIO(f.read())
-        input_audio.seek(0)
-
-        # Start receiver thread
-        recv_thread = threading.Thread(target=self.receive_audio_from_websocket, args=(self.ws,))
-        recv_thread.start()
         
-        self.send_audio_to_websocket(self.ws, input_audio)
-
-        # Wait for receiver to finish
-        recv_thread.join(timeout=30)
+        self.full_process(input_audio)
 
             
     # ===== REALTIME API ENDS HERE =====
@@ -396,31 +404,31 @@ class BackEnd:
         
     
         
-    def full_process(self, audio:io.BytesIO)->io.BytesIO:
-        transcribed = self.audio_to_text(audio)  
-        print("FOUND USER SAID:", transcribed)
+    # def full_process(self, audio:io.BytesIO)->io.BytesIO:
+    #     transcribed = self.audio_to_text(audio)  
+    #     print("FOUND USER SAID:", transcribed)
 
-        self.convo += [{
-            "role": "user",
-            "content": (transcribed),
-        }]
+    #     self.convo += [{
+    #         "role": "user",
+    #         "content": (transcribed),
+    #     }]
 
-        tool_used, text_response = self.use_tool(transcribed)
-        print("Used tool:", tool_used)
-        print("Responding with", text_response)
+    #     tool_used, text_response = self.use_tool(transcribed)
+    #     print("Used tool:", tool_used)
+    #     print("Responding with", text_response)
         
-        if tool_used != 'client_side_required':    
-            audio_buffer = self.text_to_audio(text_response)
+    #     if tool_used != 'client_side_required':    
+    #         audio_buffer = self.text_to_audio(text_response)
             
-            self.convo += [{
-                "role": "system",
-                "content": (text_response),
-            }]
+    #         self.convo += [{
+    #             "role": "system",
+    #             "content": (text_response),
+    #         }]
             
-            return audio_buffer
-        else:
-            print("Client side required...")
-            return text_response
+    #         return audio_buffer
+    #     else:
+    #         print("Client side required...")
+    #         return text_response
     
     def generate_voice(self, text:str="Hi! I'm Sharpe, your personal hands-free assistant. How may I help you today?"):
         """
@@ -482,7 +490,9 @@ if __name__ == "__main__":
     # For a small voice input (4,5,6), this took 12-13 seconds. Can we cut this down? 
         # Update: this is now 9 seconds.
     load_dotenv()
-    if os.getenv("FLASK_ENV") == "production":    
-        app.run(debug=False, port=5000)
-    else:
-        app.run(debug=True, port=5000)
+    # if os.getenv("FLASK_ENV") == "production":    
+    #     app.run(debug=False, port=5000)
+    # else:
+    #     app.run(debug=True, port=5000)
+        
+    app.run(debug=False, port=5000)
