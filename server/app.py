@@ -155,6 +155,24 @@ class BackEnd:
             print("Found following for function call:", name, call_id, arguments, function_call_args)
             
             # Add search->perplexity here
+            match name:
+                
+                case "get_updated_knowledge":
+                    # perplexity here
+                    try:
+                        print("Using Perplexity Tool.")
+                        # text, citations = self.perplexity.perplexity_response(arguments["query"])
+                    
+                    except Exception as e:
+                        print(f"Error using Perplexity Tool on input: {e}")
+                
+                case "browser_search":
+                    # send to client via websocket
+                    try:
+                        print(f"Using browser_search tool on input.")
+                        # ...
+                    except Exception as e:
+                        print(f"Error using browser_search tool on input: {e}")
             
         except Exception as e:
             print(f"Error parsing function call arguments: {e}")
@@ -436,7 +454,7 @@ class BackEnd:
         """
         response = openai.audio.speech.create(
             model="gpt-4o-mini-tts",
-            voice="coral",
+            voice="alloy",
             input=text
         )
             

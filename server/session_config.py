@@ -28,17 +28,32 @@ realtime_api_config = {
         "tools": [
             {
                 "type": "function",
-                "name": "search",
-                "description": "Search for up-to-date information.",
+                "name": "browser_search",
+                "description": "Use a web browser to search based on the user's query.", 
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query or keywords to look up."
+                            "description": "The search query or website keywords to look up in the browser."
                         }
                     },
                     "required": ["query"]
+                }
+            },
+           {
+                "type": "function",
+                "name": "get_updated_knowledge",
+                "description": "Ask a question about current or modern-day knowledge when you do not have sufficient information. Use this tool to request up-to-date facts or events beyond your training data.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The specific question or topic about modern-day knowledge that needs up-to-date information."
+                    }
+                },
+                "required": ["query"]
                 }
             },
         ]
