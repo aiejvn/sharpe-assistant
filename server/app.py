@@ -26,7 +26,7 @@ from tools.perplexity_tool import PerplexityTool
 
 # Server Websocket Modules 
 from flask import Flask
-from flask_socketio import SocketIO
+from flask_sock import Sock
 import numpy as np
 import sounddevice as sd
 from queue import Queue
@@ -39,7 +39,7 @@ from queue import Queue
 # docker stop test-ls && docker rm test-ls
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+sock = Sock(app)
 
 class BackEnd:
     
@@ -407,36 +407,54 @@ class BackEnd:
             # Process audio from client
             if not self.client2server_queue.empty():
                 audio_data = self.client2server_queue.get()
+
+                # Call full_process()? or did we make a thread for that
+
                 self.output_stream.write(audio_data)
             
-            # Generate/send audio to client
-            if not self.server2client_queue.empty():
-                audio_chunk = self.server2client_queue.get()
-                socketio.emit('audio_from_server', {
-                    'type': 'audio',
-                    'data': audio_chunk.tolist()
-                })
-                    
     
 # ========== APP STUFF ==========
 backend = BackEnd()
 
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected.')
+
+# https://www.youtube.com/watch?v=Rctz-kCvuwE - Flask sockets tutorial
+    # Running websockets kills my wifi?
+@sock.route('/ws')
+def websocket_handler(ws):
+    print('Websocket client connected.')
+    
+    # Start BG thread for managing realtime API calls + sending audio to client
     threading.Thread(target=backend.audio_processing_worker, daemon=True).start()
-    
-@socketio.on('audio_from_client')
-def handle_audio_from_client(data):
-    print('Received audio from client.')
-    if data['type'] == 'audio':
-        backend.client2server_queue.put(np.array(data['data'], dtype=np.float32))
-        
-@socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected.')
-    backend.output_stream.stop()
-    
+    try:
+        while True:
+            data = ws.receive()
+            if data is None:
+                print('Websocket client disconnected.')
+                backend.output_stream.stop()
+                break
+            
+            try:
+                data = json.loads(data)    
+            except Exception as e:
+                print(f'Invalid JSON from client: {e}')
+                continue
+            
+            if data.get('type') == 'audio':
+                try:
+                    audio_chunk = backend.client2server_queue.put(np.array(data['data'], dtype=np.float32))
+                    ws.send(json.dumps({
+                        'type':'audio',
+                        'data':audio_chunk.to_list()
+                    }))
+                except Exception as e:
+                    print(f'Error parsing data from client: {e}')
+                    
+                
+    except Exception as e:
+        print(f'Websocket error: {e}')
+        backend.output_stream.stop()
+    finally:
+        print('Websocket handler exited.')
         
 if __name__ == "__main__":
-    socketio.run(app, port=5000)
+    app.run(port=5000)

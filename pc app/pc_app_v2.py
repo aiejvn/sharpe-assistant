@@ -45,7 +45,7 @@ async def audio_stream_client(uri):
                 # Send audio to server
                 if not outgoing_queue.empty():
                     audio_chunk = outgoing_queue.get()
-                    await websockets.send(json.dumps({
+                    await ws.send(json.dumps({
                         "type":"audio",
                         "data": audio_chunk.tolist()
                     }))
@@ -88,7 +88,7 @@ def output_callback(outdata, frames, time, status):
         
 
 async def main():
-    server_uri = "127.0.0.1:5000"
+    server_uri = "ws://localhost:5000/ws"
     try:
         await audio_stream_client(server_uri)
     except Exception as e:
