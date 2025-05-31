@@ -49,7 +49,7 @@ async def audio_stream_client(uri):
                         "type":"audio",
                         "data": audio_chunk.tolist()
                     }))
-                    print(audio_chunk.tolist()) # We're sending stuff...
+                    # print(audio_chunk.tolist()) # We're sending stuff...
                     
                 # Receive audio from server
                 try:
@@ -57,6 +57,7 @@ async def audio_stream_client(uri):
                     data = json.loads(message)
                     if data["type"] == "audio":
                         incoming_queue.put(np.array(data["data"], dtype=np.float32))
+                    print('Received data.')
                 except asyncio.TimeoutError:
                     pass
                 except Exception as e:
@@ -83,6 +84,8 @@ def output_callback(outdata, frames, time, status):
         outdata.fill(0)
     else:
         audio_chunk = incoming_queue.get()
+        
+        # ValueError: could not broadcast input array from shape (256, 1) (our audio) into shape (1024, 1)
         outdata[:] = audio_chunk.reshape(-1, 1) # (frames x channels) shape, channels=1
     # print(f'Called output callback function! Incoming queue is now {incoming_queue.qsize()} items.')
     
