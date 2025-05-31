@@ -44,11 +44,12 @@ async def audio_stream_client(uri):
             while True:
                 # Send audio to server
                 if not outgoing_queue.empty():
-                    audio_chunk = outgoing_queue.get()
+                    audio_chunk = outgoing_queue.get() # float32 -> value between -1 and 1 representing amplitude
                     await ws.send(json.dumps({
                         "type":"audio",
                         "data": audio_chunk.tolist()
                     }))
+                    print(audio_chunk.tolist()) # We're sending stuff...
                     
                 # Receive audio from server
                 try:
@@ -67,24 +68,24 @@ def audio_callback(indata, frames, time, status):
     '''
         Callback function for audio input
     '''
-    if status:
-        print(f"Input status: {status}")
+    if status: print(f"Input status: {status}")
     outgoing_queue.put(indata.copy())
+    # print(f'Called audio callback function! Outgoing queue is now {outgoing_queue.qsize()} items.')
 
 
 def output_callback(outdata, frames, time, status):
     '''
         Callback function for audio input
     '''
-    if status:
-        print(f"Output status: {status}")
+    if status: print(f"Output status: {status}")
         
     if incoming_queue.empty():
         outdata.fill(0)
     else:
         audio_chunk = incoming_queue.get()
         outdata[:] = audio_chunk.reshape(-1, 1) # (frames x channels) shape, channels=1
-        
+    # print(f'Called output callback function! Incoming queue is now {incoming_queue.qsize()} items.')
+    
         
 
 async def main():
@@ -98,4 +99,8 @@ async def main():
         
         
 if __name__ == "__main__":
+    # print(sd.query_devices())
+    # print(sd.default.device)
     asyncio.run(main())
+    
+    # 5-30-2025 update: im sending my audio back to myself rn?

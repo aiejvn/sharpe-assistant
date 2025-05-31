@@ -41,6 +41,7 @@ from queue import Queue
 app = Flask(__name__)
 sock = Sock(app)
 
+
 class BackEnd:
     
     def __init__(self, streaming=False, debug=False):
@@ -440,15 +441,17 @@ def websocket_handler(ws):
                 continue
             
             if data.get('type') == 'audio':
-                try:
-                    audio_chunk = backend.client2server_queue.put(np.array(data['data'], dtype=np.float32))
+                backend.client2server_queue.put(np.array(data['data'], dtype=np.float32))
+                
+                if not backend.server2client_queue.empty():
+                    audio_chunk = backend.server2client_queue.get()
+                    print(audio_chunk)
                     ws.send(json.dumps({
                         'type':'audio',
                         'data':audio_chunk.to_list()
                     }))
-                except Exception as e:
-                    print(f'Error parsing data from client: {e}')
-                    
+                else:
+                    print('Server to client queue is empty.')
                 
     except Exception as e:
         print(f'Websocket error: {e}')
@@ -458,3 +461,4 @@ def websocket_handler(ws):
         
 if __name__ == "__main__":
     app.run(port=5000)
+    # app.run(port=5000, debug=True)
