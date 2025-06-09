@@ -1,5 +1,4 @@
 # HTML APIs
-import openai 
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -9,14 +8,15 @@ import os
 import soundfile as sf
 
 # Realtime API
+from audio_configs import *
+import base64
 import json
+import pyaudio
 import socks
 import socket
-import websocket
 import threading
-import base64
-import pyaudio
-from audio_configs import *
+import time
+import websocket
 
 socket.socket = socks.socksocket
 WS_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01'
@@ -29,15 +29,8 @@ from tools.perplexity_tool import PerplexityTool
 from flask import Flask
 from flask_sock import Sock
 import numpy as np
-import sounddevice as sd
 from queue import Queue
-
-# From root of project, run:
-# docker run --env-file ./server/.env --name test-ls kyjvn/flaskapp 
-# to spin up an image.
-
-# To stop:
-# docker stop test-ls && docker rm test-ls
+import sounddevice as sd
 
 app = Flask(__name__)
 sock = Sock(app)
@@ -57,13 +50,12 @@ class BackEnd:
         self.cohere = CohereTool(streaming=self.streaming)
         # self.calendar = CalendarTool()        
         
-        self.audio_buffer = bytearray()
-        
         # Queues for audio data between client and server, to be served via websockets
         self.client2server_queue = Queue()
         self.server2client_queue = Queue()
         
         # Audio output stream
+            # Is this still useful?
         self.output_stream = sd.OutputStream(
             samplerate=RATE,
             channels=CHANNELS,
@@ -76,39 +68,30 @@ class BackEnd:
         self.openai_ws = self.connect_to_openai(api_key=os.getenv('OPENAI_API_KEY'))
         
         p = pyaudio.PyAudio()
-        # speaker_stream = p.open(
-        #     format=FORMAT,
-        #     channels=CHANNELS,
-        #     rate=24000,
-        #     output=True,
-        #     stream_callback=self.speaker_callback,
-        #     frames_per_buffer=CHUNK
-        # )
-        
-        self.audio_buffer = bytearray() 
-        
+                                    
         # Test sending audio to client by filling output queue
-        try:
-            with open("user_input.mp3", "rb") as f:
-                input_audio = io.BytesIO(f.read())
-                input_audio.seek(0)
-                arr, _ = sf.read(input_audio, dtype='float32')
-                arr = arr.astype(np.float32)
-                # Flatten if stereo
-                if arr.ndim > 1:
-                    arr = arr.reshape(-1, 1).flatten()
+        # try:
+        #     with open("user_input.mp3", "rb") as f:
+        #         input_audio = io.BytesIO(f.read())
+        #         input_audio.seek(0)
+        #         arr, _ = sf.read(input_audio, dtype='float32')
+        #         arr = arr.astype(np.float32)
+        #         # Flatten if stereo
+        #         if arr.ndim > 1:
+        #             arr = arr.reshape(-1, 1).flatten()
                 
-                samples_per_chunk = 1024 
-                # print(samples_per_chunk) # should be 1024
-                for start in range(0, len(arr), samples_per_chunk):
-                    chunk = arr[start:start + samples_per_chunk]
-                    self.server2client_queue.put(chunk)
-        except Exception as e:
-            print(f"Could not preload user_input.mp3: {e}")
+        #         samples_per_chunk = 1024 
+        #         # print(samples_per_chunk) # should be 1024
+        #         for start in range(0, len(arr), samples_per_chunk):
+        #             chunk = arr[start:start + samples_per_chunk]
+        #             self.server2client_queue.put(chunk)
+        # except Exception as e:
+        #     print(f"Could not preload user_input.mp3: {e}")
     
         
     # ===== REALTIME API STARTS HERE ===== 
     
+    # TODO: Fix audio being too amplified bug
     def receive_audio_from_websocket(self, ws):
         try:
             while True: # No stop condition since we're on a server
@@ -126,14 +109,12 @@ class BackEnd:
                     
                     case 'response.audio.delta':
                         audio_content = base64.b64decode(message['delta'])
-                        self.audio_buffer.extend(audio_content)
                         self.server2client_queue.put(audio_content)
                         print(f'OpenAI: audio content is of type {type(audio_content)}.')
-                        print(f'OpenAI: Received {len(audio_content)} bytes. Total audio buffer size: {len(self.audio_buffer)}')
+                        print(f'OpenAI: Received {len(audio_content)} bytes.')
                     
                     case 'input_audio_buffer.speech_started':
                         print("OpenAI: New speech started, clearing buffer and stopping playback.")
-                        self.clear_audio_buffer()
                         self.stop_audio_playback()
                         
                     case 'response.audio.done':
@@ -141,6 +122,10 @@ class BackEnd:
                     
                     case 'response.function_call_arguments.done':
                         self.handle_function_call(message, ws)
+                        
+                    case 'error':
+                        print('OpenAI: Error occurred when sending package. Should investigate further.')
+                        print(message)
                 
                 
         except Exception as e:
@@ -192,14 +177,7 @@ class BackEnd:
             
         except Exception as e:
             print(f"Error parsing function call arguments: {e}")
-    
-            
-            
-    def clear_audio_buffer(self):
-        self.audio_buffer
-        self.audio_buffer = bytearray()
-        print('Audio buffer cleared.')
-    
+
     
     def stop_audio_playback(self):
         return 
@@ -221,35 +199,6 @@ class BackEnd:
             ws.send(session_config_json)
         except Exception as e:
             print(f"Failed to send session update: {e}")
-                        
-        
-    def send_audio_to_websocket(self, ws):
-        if not self.client2server_queue.empty():
-            audio_data = self.client2server_queue.get() # numpy.ndarray
-            audio_as_file = io.BytesIO()
-            sf.write(audio_as_file, data=audio_data, samplerate=RATE, format='mp3')
-        
-            audio_as_file.seek(0) # Reset file pointer to beginning
-            print(f"Size of audio file input: {audio_as_file.getbuffer().nbytes} bytes")
-            CHUNK_SIZE = 4096
-            
-            try:
-                while True:
-                    chunk = audio_as_file.read(CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    
-                    encoded_chunk = base64.b64encode(chunk).decode('utf-8')
-                    message = json.dumps({
-                        'type': 'input_audio_buffer.append',
-                        'audio': encoded_chunk
-                    })
-                    ws.send(message)
-                    print(f'Sent {len(chunk)} bytes of audio data to OpenAI realtime API.')
-            except Exception as e:
-                print(f'Exception in send_audio_to_websocket thread: {e}')
-            finally:
-                print('Exiting send_audio_to_websocket thread')
             
             
     def create_connection_with_ipv4(self, *args, **kwargs):
@@ -291,83 +240,55 @@ class BackEnd:
             receive_thread = threading.Thread(target=self.receive_audio_from_websocket, args=(ws,))
             receive_thread.start()
             
-            """
-                When we receive audio from the client, send it to the websocket.
-                We do not need to make another thread for this.
-            """
-            # mic_thread = threading.Thread(target=self.send_audio_to_websocket, args=(ws,audio_buffer,))
-            # mic_thread.start()
             return ws
             
         except Exception as e:
             print(f'Failed to connect to OpenAI: {e}')
             
             
-    def speaker_callback(self, in_data, frame_count, time_info, status):
-        """
-            Function to handle received audio playback.
-            Runs on a thread to automatically play audio data when called.
-        """
-        bytes_needed = frame_count * 2
-        current_buffer_size = len(self.audio_buffer)
-        
-        if current_buffer_size >= bytes_needed:
-            # Take the first n bytes off the bytearray
-            audio_chunk = bytes(self.audio_buffer[:bytes_needed])
-            self.audio_buffer = self.audio_buffer[bytes_needed:]
-        else:
-            # Pad the rest of the data with empty bytes
-            audio_chunk = bytes(self.audio_buffer) + b'\x00' * (bytes_needed - current_buffer_size)
-            self.audio_buffer.clear()
-            
-        return (audio_chunk, pyaudio.paContinue) 
-    
-    
-    def create_output_audio_thread(self):
-        """
-            Plays self.audio_buffer on a separate thread when called.
-        """
-        recv_thread = threading.Thread(target=self.receive_audio_from_websocket, args=(self.ws,))
-        recv_thread.start()
-        
-        return recv_thread
-        
-    
-    def full_process(self, audio:io.BytesIO):
-        """
-            General function to call for processing a user's request.
-            
-            - audio: the io.BytesIO representation of the input.
-            
-            Note: The audio data type may change once we set up websockets
-            between the front-end and the server.    
-        """     
-        
-        # Main command flow
-        recv_thread = self.create_output_audio_thread()
-        
-        # send_audio_to_realtime_api_thread = threading.Thread(target=self.send_audio_to_websocket, args=(ws,audio,))
-        # send_audio_to_realtime_api_thread.start()
-
-        # Wait for receiver to finish
-        recv_thread.join(timeout=30)
-    
-            
-    def test_realtime_api_with_mp3(self):
-        """
-            Function to test if realtime API works.
-        """
-        
-        with open("user_input.mp3", "rb") as f:
-            input_audio = io.BytesIO(f.read())
-            input_audio.seek(0)
-            arr, _ = sf.read(input_audio)
-            self.client2server_queue.put(arr)
-        
-        self.full_process(input_audio)
-
-            
     # ===== REALTIME API ENDS HERE =====
+    
+    def send_backend_audio_to_client(self, ws):
+        while True:
+            if not self.server2client_queue.empty():
+                audio_chunk = self.server2client_queue.get() # 'bytes'
+                if type(audio_chunk) == 'np.ndarray':
+                    audio_chunk = audio_chunk.ravel() # convert to np.array
+                    
+                try:
+                    ws.send(json.dumps({
+                        'type':'audio',
+                        'data':list(audio_chunk)
+                    }))
+                    print('Sent data to client.')     
+                except Exception as e:
+                    print(f'Error in sending audio to client: {e}')
+                time.sleep(0.005)
+            else: 
+                print('Server to client queue is empty.') 
+            time.sleep(0.05) # wait 50 ms to check again
+        
+    def print_queue_sizes(self):
+        server2client_total_bytes = 0
+        for item in list(self.server2client_queue.queue):
+            if isinstance(item, bytes):
+                server2client_total_bytes += len(item)
+            elif isinstance(item, np.ndarray):
+                server2client_total_bytes += item.nbytes
+            else:
+                server2client_total_bytes += len(bytes(item))
+        print(f"Total bytes in server2client_queue: {server2client_total_bytes}")
+
+        # Print total number of bytes in client2server_queue
+        client2server_total_bytes = 0
+        for item in list(self.client2server_queue.queue):
+            if isinstance(item, bytes):
+                client2server_total_bytes += len(item)
+            elif isinstance(item, np.ndarray):
+                client2server_total_bytes += item.nbytes
+            else:
+                client2server_total_bytes += len(bytes(item))
+        print(f"Total bytes in client2server_queue: {client2server_total_bytes}")
     
     
 # ========== APP STUFF ==========
@@ -378,9 +299,20 @@ backend = BackEnd()
 def websocket_handler(ws):
     print('Websocket client connected.')
     
-    # Start BG thread for managing realtime API calls + sending audio to client
-    # threading.Thread(target=backend.audio_processing_worker, daemon=True).start()
+    client_thread = threading.Thread(target=backend.send_backend_audio_to_client, args=(ws,))
+    client_thread.start()
     
+    # Read output_audio_test.bin and fill the server2client_queue
+    # try:
+    #     with open("output_audio_test.bin", "rb") as f:
+    #         while True:
+    #             chunk = f.read(CHUNK)
+    #             if not chunk:
+    #                 break
+    #             backend.server2client_queue.put(chunk)
+    #     print("Loaded output_audio_test.bin into server2client_queue.")
+    # except Exception as e:
+    #     print(f"Could not load output_audio_test.bin: {e}")
     
     try:
         while True:
@@ -390,10 +322,10 @@ def websocket_handler(ws):
                 backend.output_stream.stop()
                 break
             
+            # Note: if no output is returned, output may need to be louder.
+                            
             try:
                 data = json.loads(data)    
-                
-                threading.Thread(target=backend.send_audio_to_websocket, args=(backend.openai_ws)).start()
                 # backend.test_realtime_api_with_mp3()
 
             except Exception as e:
@@ -401,21 +333,39 @@ def websocket_handler(ws):
                 continue
             
             if data.get('type') == 'audio':
+                backend.print_queue_sizes()
+                    
                 backend.client2server_queue.put(np.array(data['data'], dtype=np.float32))
                 
-                if not backend.server2client_queue.empty():
-                    audio_chunk = backend.server2client_queue.get()
-                    # print(type(audio_chunk), audio_chunk)
-                    if type(audio_chunk) == 'np.ndarray':
-                        audio_chunk = audio_chunk.ravel() # convert to np.array
-                        
-                    # Amplify & send audio
-                    audio_chunk = np.array(audio_chunk) * 5 
-                    ws.send(json.dumps({
-                        'type':'audio',
-                        'data':audio_chunk.tolist()
-                    }))
-                    print('Sent data to client.')
+                if not backend.client2server_queue.empty():
+                    audio_data = backend.client2server_queue.get() # numpy.ndarray
+                    # note: sometimes, the app may get stuck reading a queue. this results in nothing being executed
+                    audio_as_file = io.BytesIO()
+                    sf.write(audio_as_file, data=audio_data, samplerate=24000, format='RAW', subtype='PCM_16')
+                
+                    audio_as_file.seek(0) # Reset file pointer to beginning
+                    print(f"Size of audio file input: {audio_as_file.getbuffer().nbytes} bytes")
+                    
+                    try:
+                        while True:
+                            chunk = audio_as_file.read(CHUNK)
+                            if not chunk:
+                                break
+                            
+                            encoded_chunk = base64.b64encode(chunk).decode('utf-8')
+                            message = json.dumps({
+                                'type': 'input_audio_buffer.append',
+                                'audio': encoded_chunk
+                            })
+                            backend.openai_ws.send(message)
+                            print(f'Sent {len(chunk)} bytes of audio data to OpenAI realtime API.')
+                            
+                            time.sleep(0.10) # To avoid being rate limited
+                    except Exception as e:
+                        print(f'OpenAI: Exception in sending audio to realtime API: {e}')
+                else:
+                    print('Client to server queue is empty.')              
+        
                 
     except Exception as e:
         print(f'Websocket error: {e}')
