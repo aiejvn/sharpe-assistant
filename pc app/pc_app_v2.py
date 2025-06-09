@@ -13,6 +13,8 @@ import json
 from queue import Queue
 from audio_configs import *
 
+# TODO: Limit the rate at which we play audio output (chipmunk bug)z
+
 # Queues for audio data
 outgoing_queue = Queue() # client -> server
 incoming_queue = Queue() # server -> client
@@ -66,9 +68,7 @@ async def audio_stream_client(uri):
                     message = await asyncio.wait_for(ws.recv(), timeout=0.1)
                     data = json.loads(message)
                     if data["type"] == "audio":
-                        audio_data = (np.array(data["data"], dtype=np.float32) / 256) * 2 - 1 # Convert to -1 to +1 np.float32 range
-                        audio_data = audio_data / 10 # Reduce volume
-                        incoming_queue.put(audio_data)
+                        incoming_queue.put(data["data"])
                         print(f"Received {len(data['data'])} elements of audio.")
                     else:
                         print("No audio received from back-end.")                    

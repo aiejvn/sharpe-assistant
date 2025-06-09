@@ -252,13 +252,24 @@ class BackEnd:
         while True:
             if not self.server2client_queue.empty():
                 audio_chunk = self.server2client_queue.get() # 'bytes'
-                if type(audio_chunk) == 'np.ndarray':
-                    audio_chunk = audio_chunk.ravel() # convert to np.array
+                
+                if isinstance(audio_chunk, bytes):
+                    # Assume 16-bit PCM, little-endian
+                    audio_chunk = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) 
+                    # print("1", audio_chunk)
+                    audio_chunk = audio_chunk / 32768.0
+                elif isinstance(audio_chunk, np.ndarray):
+                    audio_chunk = audio_chunk.astype(np.float32)
+                else:
+                    audio_chunk = np.array(audio_chunk, dtype=np.float32)
+                    
+                # print("2", audio_chunk)
                     
                 try:
                     ws.send(json.dumps({
                         'type':'audio',
-                        'data':list(audio_chunk)
+                        # 'data':list(audio_chunk)
+                        'data':audio_chunk.tolist()
                     }))
                     print('Sent data to client.')     
                 except Exception as e:
