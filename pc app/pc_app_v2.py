@@ -13,8 +13,6 @@ import json
 from queue import Queue
 from audio_configs import *
 
-# TODO: Limit the rate at which we play audio output (chipmunk bug)z
-
 # Queues for audio data
 outgoing_queue = Queue() # client -> server
 
@@ -121,7 +119,14 @@ def audio_callback(indata, frames, time, status):
         Callback function for audio input
     '''
     if status: print(f"Input status: {status}")
-    outgoing_queue.put(indata.copy())
+    
+    mean_level = np.abs(indata).mean()
+    print(f"Mean audio level: {mean_level}")
+    threshold = 0.01  
+    if mean_level > threshold:
+        in_data = indata.copy() * 100 # Make input audio audible to realtime api
+        print(in_data)
+        outgoing_queue.put(in_data)
 
 
 def output_callback(outdata, frames, time, status):
