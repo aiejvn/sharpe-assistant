@@ -12,12 +12,16 @@ import numpy as np
 import json
 from queue import Queue
 from audio_configs import *
+import time
 
 # Queues for audio data
 outgoing_queue = Queue() # client -> server
 
 # server -> client
 incoming_buffer = bytearray() 
+
+is_recording = False
+start_time = None
 
 # Test server response by sending generic audio
 # try:
@@ -49,7 +53,7 @@ def print_queue_sizes():
     print(f"Total bytes in outgoing_queue: {outgoing_queue_bytes}")
 
     # Print total number of bytes in client2server_queue
-    print(f"Total bytes in incoming_queue: {len(incoming_buffer)}")
+    print(f"Total bytes in incoming_buffer: {len(incoming_buffer)}")
 
 async def audio_stream_client(uri):
     async with websockets.connect(uri) as ws:
@@ -78,6 +82,7 @@ async def audio_stream_client(uri):
             print("Audio streams started. Press CTRL-C to stop.")
             
             while True:
+                start = time.time()
                 # Receive audio from server
                 try:
                     message = await asyncio.wait_for(ws.recv(), timeout=0.1)
@@ -113,29 +118,46 @@ async def audio_stream_client(uri):
                     print_queue_sizes()
                 except Exception as e:
                     print(f"Error printing queue sizes: {e}")
+                print(f"Main loop took {time.time() - start} seconds to run.")
         
-def audio_callback(indata, frames, time, status):
+def audio_callback(indata, frames, input_time, status):
     '''
         Callback function for audio input
     '''
+    
+    # BUG: Audio is choppy. Realtime API says we have mic errors. Make the recording smoother.
+    global is_recording, start_time
+    s = time.time()
+    
     if status: print(f"Input status: {status}")
+    multiplier = 1
     
     mean_level = np.abs(indata).mean()
     print(f"Mean audio level: {mean_level}")
     threshold = 0.01  
-    if mean_level > threshold:
-        in_data = indata.copy() * 100 # Make input audio audible to realtime api
+    if mean_level >= threshold:
+        is_recording = True
+        start_time = time.time()
+    elif start_time and time.time() - start_time > 1:
+        is_recording = False
+        start_time = None
+    
+    if is_recording:  
+        in_data = indata.copy() * multiplier # Make input audio audible to realtime api
         print(in_data)
         outgoing_queue.put(in_data)
+    print(f"Audio callback took {time.time() - s} seconds to run.")
 
 
-def output_callback(outdata, frames, time, status):
+def output_callback(outdata, frames, output_time, status):
     '''
         Callback function for playing audio
     '''
     global incoming_buffer
     if status: print(f"Output status: {status}")
-    slow_factor = 2 # Input will play at 0.5x speed 
+
+    s = time.time()
+    slow_factor = 2 # Audio slows as this number increases
         
     bytes_needed = max(frames * 2 // slow_factor, 1)
     if len(incoming_buffer) >= bytes_needed:
@@ -151,6 +173,7 @@ def output_callback(outdata, frames, time, status):
     
     # Insert into outdata (handle mono)
     outdata[:, 0] = audio_np[:frames] if len(audio_np) >= frames else np.pad(audio_np, (0, frames - len(audio_np)))
+    print(f"Output callback took {time.time() - s} seconds to run.")
 
 async def main():
     server_uri = "ws://localhost:5000/ws"

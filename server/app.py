@@ -35,6 +35,8 @@ import sounddevice as sd
 app = Flask(__name__)
 sock = Sock(app)
 
+last_send = None
+
 
 class BackEnd:
     
@@ -249,6 +251,8 @@ class BackEnd:
     # ===== REALTIME API ENDS HERE =====
     
     def send_backend_audio_to_client(self, ws):
+        global last_send
+        
         while True:
             if not self.server2client_queue.empty():
                 audio_chunk = self.server2client_queue.get() # 'bytes'
@@ -275,8 +279,11 @@ class BackEnd:
                 except Exception as e:
                     print(f'Error in sending audio to client: {e}')
                 time.sleep(0.005)
-            else: 
-                print('Server to client queue is empty.') 
+                
+                if last_send: print(f"Time between last send and current send: {time.time() - last_send}")
+                last_send = time.time()
+            # else: 
+            #     print('Server to client queue is empty.') 
             time.sleep(0.05) # wait 50 ms to check again
         
     def print_queue_sizes(self):
