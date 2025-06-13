@@ -1,4 +1,5 @@
 # HTML APIs
+import openai
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -70,6 +71,8 @@ class BackEnd:
         self.openai_ws = self.connect_to_openai(api_key=os.getenv('OPENAI_API_KEY'))
         
         p = pyaudio.PyAudio()
+        
+        self.last_finished = False
                                     
         # Test sending audio to client by filling output queue
         # try:
@@ -92,8 +95,6 @@ class BackEnd:
     
         
     # ===== REALTIME API STARTS HERE ===== 
-    
-    # TODO: Fix audio being too amplified bug
     def receive_audio_from_websocket(self, ws):
         try:
             while True: # No stop condition since we're on a server
@@ -123,7 +124,8 @@ class BackEnd:
                         print('OpenAI: AI is finished speaking.')
                     
                     case 'response.function_call_arguments.done':
-                        self.handle_function_call(message, ws)
+                        # Asynchronously call tool
+                        threading.Thread(target=self.handle_function_call, args=(message, ws), daemon=True).start()
                         
                     case 'error':
                         print('OpenAI: Error occurred when sending package. Should investigate further.')
@@ -139,7 +141,7 @@ class BackEnd:
     def handle_function_call(self, event_json, ws):
         """
             Tool-calling goes here.
-            OpenAI decides it on their end.
+            \nShould happen asynchronously.
         """
         
         # Example json input: 
@@ -147,6 +149,7 @@ class BackEnd:
         # call_id=call_319SRx808YpFiXuC 
         # arguments={"query":"new laptops 2025"} 
         # function_arguments={'query': 'new laptops 2025'}
+        start = time.time()
         try:
             # 2nd arg is default value (if value is not found)
             name = event_json.get('name', "")
@@ -161,10 +164,34 @@ class BackEnd:
             match name:
                 
                 case "get_updated_knowledge":
-                    # perplexity here
+                    # TODO: Complete perplexity tool 
                     try:
                         print("Using Perplexity Tool.")
-                        # text, citations = self.perplexity.perplexity_response(arguments["query"])
+                        
+                        # Get text, apply TTS, append to next voice input (if we are receiving deltas)
+                        # text, _ = self.perplexity.perplexity_response(arguments["query"])
+                        text = "This is a test for the perplexity tool."
+                        audio_buffer = self.text_to_audio(text)
+                        
+                        # Wait until server queue is empty, then add it
+                        while not self.server2client_queue.empty():
+                            pass
+                        
+                        try:
+                            # Convert MP3 buffer to PCM16 numpy array
+                            arr, _ = sf.read(audio_buffer, dtype='float32')
+                            arr = arr.astype(np.float32)
+                            if arr.ndim > 1:
+                                arr = arr.mean(axis=1)  # Convert to mono if stereo
+
+                            # Convert to PCM16 bytes
+                            arr_pcm16 = (arr * 32767).astype(np.int16)
+                            for start in range(0, len(arr_pcm16), CHUNK):
+                                chunk = arr_pcm16[start:start + CHUNK].tobytes()
+                                self.server2client_queue.put(chunk)
+                        except Exception as e:
+                            print(f"Error appending TTS audio to server2client_queue: {e}")
+                        
                     
                     except Exception as e:
                         print(f"Error using Perplexity Tool on input: {e}")
@@ -179,6 +206,8 @@ class BackEnd:
             
         except Exception as e:
             print(f"Error parsing function call arguments: {e}")
+        finally:
+            print(f"Tool call took {time.time() - start} seconds.")
 
     
     def stop_audio_playback(self):
@@ -308,6 +337,26 @@ class BackEnd:
                 client2server_total_bytes += len(bytes(item))
         print(f"Total bytes in client2server_queue: {client2server_total_bytes}")
     
+    
+    def text_to_audio(self, text:str)->io.BytesIO:
+        """
+            Given user input, get a TTS output.
+            \nA speed bottleneck.
+        """
+        response = openai.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=text
+        )
+            
+        audio_buffer = io.BytesIO(response.content) # Write straight to buffer
+        audio_buffer.seek(0)
+      
+        if self.debug:
+            with open("voice_output.mp3", "wb") as f:
+                f.write(audio_buffer.getvalue())
+      
+        return audio_buffer
     
 # ========== APP STUFF ==========
 backend = BackEnd()
