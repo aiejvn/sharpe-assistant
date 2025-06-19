@@ -34,7 +34,7 @@ class PerplexityTool:
             \n For singular input.
         """
           
-        convo = [
+        messages = [
             {
                 "role": "system",
                 "content": (
@@ -48,22 +48,19 @@ class PerplexityTool:
                 ),
             },
             {
-                "role":"system",
+                "role":"user",
                 "content":(
                     "Answer the following query, to the best of your knowledge."
                     "Keep responses as brief as possible."
-                )
+                    f"{input}"
+                ),
             },
-            {
-                "role":"user",
-                "content":(input)
-            }
         ]
         
         
         response = self.perplexity_client.chat.completions.create(
             model="sonar-pro",
-            messages=convo,
+            messages=messages,
         )
         citations = response.citations
         text = response.choices[0].message.content

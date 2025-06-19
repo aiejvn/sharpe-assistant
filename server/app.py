@@ -19,6 +19,8 @@ import threading
 import time
 import websocket
 
+import traceback
+
 socket.socket = socks.socksocket
 WS_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01'
 
@@ -160,17 +162,14 @@ class BackEnd:
             
             print("OpenAI: Found following for function call:", name, call_id, arguments, function_call_args)
             
-            # Add search->perplexity here
             match name:
-                
                 case "get_updated_knowledge":
-                    # TODO: Complete perplexity tool 
                     try:
                         print("Using Perplexity Tool.")
                         
                         # Get text, apply TTS, append to next voice input (if we are receiving deltas)
-                        # text, _ = self.perplexity.perplexity_response(arguments["query"])
-                        text = "This is a test for the perplexity tool."
+                        text, _ = self.perplexity.single_perplexity_response(function_call_args["query"])
+                        print(text)
                         audio_buffer = self.text_to_audio(text)
                         
                         # Wait until server queue is empty, then add it
@@ -194,7 +193,10 @@ class BackEnd:
                         
                     
                     except Exception as e:
-                        print(f"Error using Perplexity Tool on input: {e}")
+                        tb = traceback.extract_tb(e.__traceback__)
+                        for i in range(len(tb)):
+                            filename, lineno, func, text = tb[i]
+                            print(f"Error using Perplexity Tool on input: {e} (File: {filename}, Line: {lineno})")
                 
                 case "browser_search":
                     # send to client via websocket
