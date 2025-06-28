@@ -14,6 +14,11 @@ from queue import Queue
 from audio_configs import *
 import time
 
+from desktop_tools.chrome_tool import ChromeTool
+
+chrome_browser = ChromeTool("win32")
+chrome_browser.open_chrome("https://google.com")
+
 # Queues for audio data
 outgoing_queue = Queue() # client -> server
 
@@ -39,7 +44,7 @@ start_time = None
 #             outgoing_queue.put(chunk)
 # except Exception as e:
 #     print(f"Could not preload user_input.mp3: {e}")
-    
+
     
 def print_queue_sizes():
     outgoing_queue_bytes = 0
@@ -87,6 +92,7 @@ async def audio_stream_client(uri):
                 try:
                     message = await asyncio.wait_for(ws.recv(), timeout=0.1)
                     data = json.loads(message)
+                    print(f"Received {data.get('type') if data.get('type') else 'unknown'} from server.")
                     if data["type"] == "audio":
                         global incoming_buffer
                         
@@ -95,8 +101,21 @@ async def audio_stream_client(uri):
                         arr_pcm16 = (arr * 32767).astype(np.int16)
                         incoming_buffer += arr_pcm16.tobytes()
                         print(f"Received {len(data['data'])} elements of audio.")
+                    
+                    elif data["type"] == "html_request":
+                        global chrome_browser
+                        status, html = chrome_browser.fetch_chrome_html()
+                        print(f"Chrome: {'Successfully read HTML!' if status == 0 else 'Encountered error whenr eading HTML.'}")
+                        
+                        await ws.send(json.dumps({
+                            "type":"html_response",
+                            "status": status,
+                            "data":html
+                        }))
+                        print(f"Sent current HTML to server.")
+                    
                     else:
-                        print("No audio received from back-end.")                    
+                        print("No response received from back-end.")                    
                 except asyncio.TimeoutError:
                     pass
                 except Exception as e:
@@ -114,18 +133,16 @@ async def audio_stream_client(uri):
                     }))
                     print(f'Sent {len(audio_chunk.tolist())} elements of audio.')
                 
-                try:
-                    print_queue_sizes()
-                except Exception as e:
-                    print(f"Error printing queue sizes: {e}")
-                print(f"Main loop took {time.time() - start} seconds to run.")
+                # try:
+                #     print_queue_sizes()
+                # except Exception as e:
+                #     print(f"Error printing queue sizes: {e}")
+                # print(f"Main loop took {time.time() - start} seconds to run.")
         
 def audio_callback(indata, frames, input_time, status):
     '''
         Callback function for audio input
     '''
-    
-    # BUG: Audio is choppy. Realtime API says we have mic errors. Make the recording smoother.
     global is_recording, start_time
     s = time.time()
     
@@ -133,7 +150,7 @@ def audio_callback(indata, frames, input_time, status):
     multiplier = 1
     
     mean_level = np.abs(indata).mean()
-    print(f"Mean audio level: {mean_level}")
+    # print(f"Mean audio level: {mean_level}")
     threshold = 0.01  
     if mean_level >= threshold:
         is_recording = True
@@ -146,7 +163,7 @@ def audio_callback(indata, frames, input_time, status):
         in_data = indata.copy() * multiplier # Make input audio audible to realtime api
         print(in_data)
         outgoing_queue.put(in_data)
-    print(f"Audio callback took {time.time() - s} seconds to run.")
+    # print(f"Audio callback took {time.time() - s} seconds to run.")
 
 
 def output_callback(outdata, frames, output_time, status):
@@ -173,7 +190,7 @@ def output_callback(outdata, frames, output_time, status):
     
     # Insert into outdata (handle mono)
     outdata[:, 0] = audio_np[:frames] if len(audio_np) >= frames else np.pad(audio_np, (0, frames - len(audio_np)))
-    print(f"Output callback took {time.time() - s} seconds to run.")
+    # print(f"Output callback took {time.time() - s} seconds to run.")
 
 async def main():
     server_uri = "ws://localhost:5000/ws"

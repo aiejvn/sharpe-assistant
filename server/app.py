@@ -27,6 +27,7 @@ WS_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10
 # MCP
 from tools.cohere_tool import CohereTool
 from tools.perplexity_tool import PerplexityTool
+from tools.browser_read import prompt
 
 # Server Websocket Modules 
 from flask import Flask
@@ -72,9 +73,12 @@ class BackEnd:
         # Initialization of Realtime API stuff
         self.openai_ws = self.connect_to_openai(api_key=os.getenv('OPENAI_API_KEY'))
         
+        # For interfacing w/ cleint
+        self.client_ws = None
+        
         p = pyaudio.PyAudio()
         
-        self.last_finished = False
+        self.cur_html = None
                                     
         # Test sending audio to client by filling output queue
         # try:
@@ -127,6 +131,7 @@ class BackEnd:
                     
                     case 'response.function_call_arguments.done':
                         # Asynchronously call tool
+                        # Note: the 'ws' here is our OpenAI ws. 
                         threading.Thread(target=self.handle_function_call, args=(message, ws), daemon=True).start()
                         
                     case 'error':
@@ -139,6 +144,30 @@ class BackEnd:
         finally:
             print('OpenAI: Exiting receive_audio_from_websocket thread.')
             
+    
+    def text_to_audio_queue(self, text):
+        """Put a textual response in the audio queue."""
+        print(text)
+        audio_buffer = self.text_to_audio(text)
+        
+        # Wait until server queue is empty, then add it
+        while not self.server2client_queue.empty():
+            pass
+        
+        try:
+            # Convert MP3 buffer to PCM16 numpy array
+            arr, _ = sf.read(audio_buffer, dtype='float32')
+            arr = arr.astype(np.float32)
+            if arr.ndim > 1:
+                arr = arr.mean(axis=1)  # Convert to mono if stereo
+
+            # Convert to PCM16 bytes
+            arr_pcm16 = (arr * 32767).astype(np.int16)
+            for start in range(0, len(arr_pcm16), CHUNK):
+                chunk = arr_pcm16[start:start + CHUNK].tobytes()
+                self.server2client_queue.put(chunk)
+        except Exception as e:
+            print(f"Error appending TTS audio to server2client_queue: {e}")
     
     def handle_function_call(self, event_json, ws):
         """
@@ -169,42 +198,77 @@ class BackEnd:
                         
                         # Get text, apply TTS, append to next voice input (if we are receiving deltas)
                         text, _ = self.perplexity.single_perplexity_response(function_call_args["query"])
-                        print(text)
-                        audio_buffer = self.text_to_audio(text)
+                        # print(text)
+                        # audio_buffer = self.text_to_audio(text)
                         
-                        # Wait until server queue is empty, then add it
-                        while not self.server2client_queue.empty():
-                            pass
+                        # # Wait until server queue is empty, then add it
+                        # while not self.server2client_queue.empty():
+                        #     pass
                         
-                        try:
-                            # Convert MP3 buffer to PCM16 numpy array
-                            arr, _ = sf.read(audio_buffer, dtype='float32')
-                            arr = arr.astype(np.float32)
-                            if arr.ndim > 1:
-                                arr = arr.mean(axis=1)  # Convert to mono if stereo
+                        # try:
+                        #     # Convert MP3 buffer to PCM16 numpy array
+                        #     arr, _ = sf.read(audio_buffer, dtype='float32')
+                        #     arr = arr.astype(np.float32)
+                        #     if arr.ndim > 1:
+                        #         arr = arr.mean(axis=1)  # Convert to mono if stereo
 
-                            # Convert to PCM16 bytes
-                            arr_pcm16 = (arr * 32767).astype(np.int16)
-                            for start in range(0, len(arr_pcm16), CHUNK):
-                                chunk = arr_pcm16[start:start + CHUNK].tobytes()
-                                self.server2client_queue.put(chunk)
-                        except Exception as e:
-                            print(f"Error appending TTS audio to server2client_queue: {e}")
-                        
-                    
+                        #     # Convert to PCM16 bytes
+                        #     arr_pcm16 = (arr * 32767).astype(np.int16)
+                        #     for start in range(0, len(arr_pcm16), CHUNK):
+                        #         chunk = arr_pcm16[start:start + CHUNK].tobytes()
+                        #         self.server2client_queue.put(chunk)
+                        # except Exception as e:
+                        #     print(f"Error appending TTS audio to server2client_queue: {e}")
+                        self.text_to_audio_queue(text)
+
                     except Exception as e:
                         tb = traceback.extract_tb(e.__traceback__)
                         for i in range(len(tb)):
                             filename, lineno, func, text = tb[i]
                             print(f"Error using Perplexity Tool on input: {e} (File: {filename}, Line: {lineno})")
                 
-                case "browser_search":
-                    # send to client via websocket
+                    """
+                    1. Get client browser HTML [X]
+                    2. Process using LLM (tool specific)
+                    3. Return result 
+                    
+                    Process user input into read or write (input)
+                        Read [X] -> Get HTML, RAG response w/ user query, send to OpenAI API and add audio (like Perplexity tool).
+                        Write -> Click on elem?
+                                Highlight, then send click
+                                (Subject to change. Needs research.)
+                    """
+                case "browser_read":
+                    # Voice Prompt to test this: "Please read my browser for me"
                     try:
-                        print(f"Using browser_search tool on input.")
-                        # ...
+                        print(f"Using browser_read tool on input.")
+                        if self.client_ws:
+                            # Send a request to the client for the current HTML
+                            self.client_ws.send(json.dumps({"type": "html_request"}))
+                            print("Sent browser_read request to client, waiting for response...")
+
+                            # Wait for the client to respond with the HTML
+                            # client_response = self.client_ws.receive()
+                            # if client_response is None:
+                            #     print("No response received from client for browser_read.")
+                            #     return
+                            # else:
+                            #     print(f"Received response from client!")
+                
+                            # Move this to same stream w/ client, set the html
+                            # response_data = json.loads(client_response)
+                            # print("Type is:", response_data.get('type'))
+                            # if response_data.get('type') == 'html_response':
+                            #     print(f"Received client response: {response_data}")
+
+                            #     html = response_data.get("data", "")
+                            #     result = self.cohere.single_cohere_response(html, instructions=prompt)
+                            #     self.text_to_audio_queue(result)
+                        else:
+                            print("Could not find client.")
+
                     except Exception as e:
-                        print(f"Error using browser_search tool on input: {e}")
+                        print(f"Error using browser_read tool on input: {e}")
             
         except Exception as e:
             print(f"Error parsing function call arguments: {e}")
@@ -367,6 +431,7 @@ backend = BackEnd()
 @sock.route('/ws')
 def websocket_handler(ws):
     print('Websocket client connected.')
+    backend.client_ws = ws
     
     client_thread = threading.Thread(target=backend.send_backend_audio_to_client, args=(ws,))
     client_thread.start()
@@ -401,6 +466,7 @@ def websocket_handler(ws):
                 print(f'Invalid JSON from client: {e}')
                 continue
             
+            print(f"Received {data.get('type')} from client.")
             if data.get('type') == 'audio':
                 backend.print_queue_sizes()
                     
@@ -433,8 +499,14 @@ def websocket_handler(ws):
                     except Exception as e:
                         print(f'OpenAI: Exception in sending audio to realtime API: {e}')
                 else:
-                    print('Client to server queue is empty.')              
-        
+                    print('Client to server queue is empty.') 
+            elif data.get('type') == 'html_response':
+                print(f"Received html from client")
+                html = data.get("data", "")
+                result = backend.cohere.single_cohere_response(html, instructions=prompt)
+                print("Processed html. Now turning into audio.")
+                backend.text_to_audio_queue(result)
+                print("Fully processed returned HTML.")
                 
     except Exception as e:
         print(f'Websocket error: {e}')
